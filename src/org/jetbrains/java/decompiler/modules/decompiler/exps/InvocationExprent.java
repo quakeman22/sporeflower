@@ -11,6 +11,7 @@ import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.ClasspathHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
+import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.SFormsConstructor;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.VarMapHolder;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
@@ -1142,13 +1143,14 @@ public class InvocationExprent extends Exprent {
       if (mask == null || mask.get(i) == null) {
         TextBuffer buff = new TextBuffer();
         boolean ambiguous = setAmbiguousParameters.get(i);
+        Exprent parameterExpr = remapReflectiveClassNameArgument(i, lstParameters.get(i));
 
-        if (i == parameters.size() - 1 && lstParameters.get(i).getExprType() == VarType.VARTYPE_NULL && NewExprent.probablySyntheticParameter(descriptor.params[i].value)) {
+        if (i == parameters.size() - 1 && parameterExpr.getExprType() == VarType.VARTYPE_NULL && NewExprent.probablySyntheticParameter(descriptor.params[i].value)) {
           break;  // skip last parameter of synthetic constructor call
         }
 
         // 'byte' and 'short' literals need an explicit narrowing type cast when used as a parameter
-        ExprProcessor.getCastedExprent(lstParameters.get(i), types[i], buff, indent, ambiguous ? ExprProcessor.NullCastType.CAST : ExprProcessor.NullCastType.DONT_CAST_AT_ALL, ambiguous, true, true);
+        ExprProcessor.getCastedExprent(parameterExpr, types[i], buff, indent, ambiguous ? ExprProcessor.NullCastType.CAST : ExprProcessor.NullCastType.DONT_CAST_AT_ALL, ambiguous, true, true);
 
         // the last "new Object[0]" in the vararg call is not printed
         if (buff.length() > 0) {
@@ -1169,6 +1171,72 @@ public class InvocationExprent extends Exprent {
     }
 
     return buf;
+  }
+
+  private Exprent remapReflectiveClassNameArgument(int parameterIndex, Exprent parameterExpr) {
+    if (parameterIndex != 0 || !isClassForNameInvocation()) {
+      return parameterExpr;
+    }
+
+    if (!(parameterExpr instanceof ConstExprent constExpr) || !VarType.VARTYPE_STRING.equals(constExpr.getConstType())) {
+      return parameterExpr;
+    }
+
+    Object value = constExpr.getValue();
+    if (!(value instanceof String literal)) {
+      return parameterExpr;
+    }
+
+    String remapped = remapClassNameLiteral(literal);
+    if (remapped == null || remapped.equals(literal)) {
+      return parameterExpr;
+    }
+
+    return new ConstExprent(VarType.VARTYPE_STRING, remapped, constExpr.bytecode);
+  }
+
+  private boolean isClassForNameInvocation() {
+    if (!isStatic || !"java/lang/Class".equals(classname) || !"forName".equals(name)) {
+      return false;
+    }
+
+    return "(Ljava/lang/String;)Ljava/lang/Class;".equals(stringDescriptor)
+      || "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;".equals(stringDescriptor);
+  }
+
+  private static @Nullable String remapClassNameLiteral(String classLiteral) {
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null || classLiteral == null || classLiteral.isEmpty()) {
+      return null;
+    }
+
+    String mapped = lookupMappedClassName(interceptor, classLiteral);
+    if (mapped != null) {
+      return mapped.replace('/', '.');
+    }
+
+    if (classLiteral.startsWith("[L") && classLiteral.endsWith(";")) {
+      String component = classLiteral.substring(2, classLiteral.length() - 1);
+      String mappedComponent = lookupMappedClassName(interceptor, component);
+      if (mappedComponent != null) {
+        return "[L" + mappedComponent.replace('/', '.') + ";";
+      }
+    }
+
+    return null;
+  }
+
+  private static @Nullable String lookupMappedClassName(PoolInterceptor interceptor, String className) {
+    String mapped = interceptor.getName(className);
+    if (mapped != null) {
+      return mapped;
+    }
+
+    if (className.indexOf('/') < 0) {
+      return interceptor.getName(className.replace('.', '/'));
+    }
+
+    return null;
   }
 
   private boolean isVarArgCall() {
