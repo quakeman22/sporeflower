@@ -24,10 +24,10 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.LinkedHashSet;
 
 public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   private final Map<String, String> classRenames;
@@ -67,125 +67,17 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       throw new IOException("Tiny mapping source and target namespaces resolve to the same index (" + sourceNamespaceIndex + ") in " + mappingPath);
     }
 
-    Map<String, String> classRenames = new LinkedHashMap<>();
-    for (int lineNo = 2; lineNo <= lines.size(); lineNo++) {
-      String line = lines.get(lineNo - 1);
-      int indent = countLeadingTabs(line);
-      String body = line.substring(indent);
-      if (indent != 0 || body.isBlank() || body.startsWith("#")) {
-        continue;
-      }
+    boolean escapedNames = hasEscapedNamesProperty(lines);
 
-      String[] columns = body.split("\t", -1);
-      if (!"c".equals(columns[0])) {
-        continue;
-      }
-
-      ensureColumns(columns, 1 + header.namespaces().size(), mappingPath, lineNo, "class");
-      String fromName = unescape(columns[1 + sourceNamespaceIndex]);
-      String toName = unescape(columns[1 + targetNamespaceIndex]);
-      addRename(classRenames, fromName, fromName, toName, mappingPath, lineNo, "class");
-    }
-
-    Map<MemberKey, String> fieldRenames = new LinkedHashMap<>();
-    Map<MemberKey, String> methodRenames = new LinkedHashMap<>();
-    Map<MemberKey, Map<Integer, String>> parameterRenames = new LinkedHashMap<>();
-    int parameterEntryCount = 0;
-
-    String currentClass = null;
-    MemberKey currentMethodSource = null;
-    List<MemberKey> currentMethodParameterKeys = Collections.emptyList();
-
-    for (int lineNo = 2; lineNo <= lines.size(); lineNo++) {
-      String line = lines.get(lineNo - 1);
-      int indent = countLeadingTabs(line);
-      String body = line.substring(indent);
-      if (body.isBlank() || body.startsWith("#")) {
-        continue;
-      }
-
-      String[] columns = body.split("\t", -1);
-      String kind = columns[0];
-
-      if (indent == 0) {
-        currentMethodSource = null;
-        currentMethodParameterKeys = Collections.emptyList();
-
-        if (!"c".equals(kind)) {
-          currentClass = null;
-          continue;
-        }
-
-        ensureColumns(columns, 1 + header.namespaces().size(), mappingPath, lineNo, "class");
-        String fromName = unescape(columns[1 + sourceNamespaceIndex]);
-        currentClass = fromName.isEmpty() ? null : fromName;
-        continue;
-      }
-
-      if (indent == 1) {
-        currentMethodSource = null;
-        currentMethodParameterKeys = Collections.emptyList();
-
-        if (currentClass == null) {
-          continue;
-        }
-
-        if ("f".equals(kind)) {
-          ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "field");
-          String descriptor = unescape(columns[1]);
-          String fromName = unescape(columns[2 + sourceNamespaceIndex]);
-          String toName = unescape(columns[2 + targetNamespaceIndex]);
-          addRename(fieldRenames, new MemberKey(currentClass, fromName, descriptor), fromName, toName, mappingPath, lineNo, "field");
-        }
-        else if ("m".equals(kind)) {
-          ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "method");
-          String descriptor = unescape(columns[1]);
-          String fromName = unescape(columns[2 + sourceNamespaceIndex]);
-          String toName = unescape(columns[2 + targetNamespaceIndex]);
-
-          currentMethodSource = new MemberKey(currentClass, fromName, descriptor);
-          String mappedOwner = classRenames.getOrDefault(currentClass, currentClass);
-          String mappedDescriptor = remapMethodDescriptor(descriptor, classRenames);
-          MemberKey currentMethodTarget = new MemberKey(mappedOwner, toName, mappedDescriptor);
-          currentMethodParameterKeys = buildParameterMethodKeys(currentMethodSource, currentMethodTarget);
-
-          addRename(methodRenames, currentMethodSource, fromName, toName, mappingPath, lineNo, "method");
-        }
-
-        continue;
-      }
-
-      if (indent == 2 && "p".equals(kind) && currentMethodSource != null) {
-        ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "parameter");
-
-        final int lvIndex;
-        try {
-          lvIndex = Integer.parseInt(columns[1]);
-        }
-        catch (NumberFormatException ex) {
-          throw new IOException("Invalid Tiny parameter local variable index at " + mappingPath + ":" + lineNo + ": '" + columns[1] + "'", ex);
-        }
-
-        String fromName = unescape(columns[2 + sourceNamespaceIndex]);
-        String toName = unescape(columns[2 + targetNamespaceIndex]);
-        boolean added = addParameterRename(parameterRenames, currentMethodSource, lvIndex, fromName, toName, mappingPath, lineNo);
-        for (MemberKey key : currentMethodParameterKeys) {
-          if (!key.equals(currentMethodSource)) {
-            addParameterRename(parameterRenames, key, lvIndex, fromName, toName, mappingPath, lineNo);
-          }
-        }
-        if (added) {
-          parameterEntryCount++;
-        }
-      }
-    }
+    Map<String, String> classRenames = collectClassRenames(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames);
+    ParsedMembers parsed = parseMembers(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames, classRenames);
 
     return new Tiny2IdentifierRenamer(
       Collections.unmodifiableMap(classRenames),
-      Collections.unmodifiableMap(fieldRenames),
-      Collections.unmodifiableMap(methodRenames),
-      freezeParameterMap(parameterRenames),
-      parameterEntryCount
+      Collections.unmodifiableMap(parsed.fieldRenames()),
+      Collections.unmodifiableMap(parsed.methodRenames()),
+      freezeParameterMap(parsed.parameterRenames()),
+      parsed.parameterEntryCount()
     );
   }
 
@@ -270,6 +162,176 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     return base + "_" + (attempt - 1);
   }
 
+  private static Map<String, String> collectClassRenames(
+    List<String> lines,
+    Path mappingPath,
+    Header header,
+    int sourceNamespaceIndex,
+    int targetNamespaceIndex,
+    boolean escapedNames
+  ) throws IOException {
+    Map<String, String> classRenames = new LinkedHashMap<>();
+
+    for (int lineNo = 2; lineNo <= lines.size(); lineNo++) {
+      String line = lines.get(lineNo - 1);
+      int indent = countLeadingTabs(line);
+      String body = line.substring(indent);
+      if (indent != 0 || body.isBlank() || body.startsWith("#")) {
+        continue;
+      }
+
+      String[] columns = body.split("\t", -1);
+      if (!"c".equals(columns[0])) {
+        continue;
+      }
+
+      ensureColumns(columns, 1 + header.namespaces().size(), mappingPath, lineNo, "class");
+      String fromName = decodeTinyString(columns[1 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "class source name");
+      String toName = decodeTinyString(columns[1 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "class target name");
+      addRename(classRenames, fromName, fromName, toName, mappingPath, lineNo, "class");
+    }
+
+    return classRenames;
+  }
+
+  private static ParsedMembers parseMembers(
+    List<String> lines,
+    Path mappingPath,
+    Header header,
+    int sourceNamespaceIndex,
+    int targetNamespaceIndex,
+    boolean escapedNames,
+    Map<String, String> classRenames
+  ) throws IOException {
+    Map<MemberKey, String> fieldRenames = new LinkedHashMap<>();
+    Map<MemberKey, String> methodRenames = new LinkedHashMap<>();
+    Map<MemberKey, Map<Integer, String>> parameterRenames = new LinkedHashMap<>();
+    int parameterEntryCount = 0;
+
+    String currentClass = null;
+    MemberKey currentMethodSource = null;
+    List<MemberKey> currentMethodPhaseKeys = Collections.emptyList();
+
+    for (int lineNo = 2; lineNo <= lines.size(); lineNo++) {
+      String line = lines.get(lineNo - 1);
+      int indent = countLeadingTabs(line);
+      String body = line.substring(indent);
+      if (body.isBlank() || body.startsWith("#")) {
+        continue;
+      }
+
+      String[] columns = body.split("\t", -1);
+      String kind = columns[0];
+
+      if (indent == 0) {
+        currentMethodSource = null;
+        currentMethodPhaseKeys = Collections.emptyList();
+
+        if (!"c".equals(kind)) {
+          currentClass = null;
+          continue;
+        }
+
+        ensureColumns(columns, 1 + header.namespaces().size(), mappingPath, lineNo, "class");
+        String fromName = decodeTinyString(columns[1 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "class source name");
+        currentClass = fromName.isEmpty() ? null : fromName;
+        continue;
+      }
+
+      if (indent == 1) {
+        currentMethodSource = null;
+        currentMethodPhaseKeys = Collections.emptyList();
+
+        if (currentClass == null) {
+          continue;
+        }
+
+        if ("f".equals(kind)) {
+          ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "field");
+          String descriptor = decodeTinyString(columns[1], escapedNames, mappingPath, lineNo, "field descriptor");
+          String fromName = decodeTinyString(columns[2 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "field source name");
+          String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "field target name");
+          addRename(fieldRenames, new MemberKey(currentClass, fromName, descriptor), fromName, toName, mappingPath, lineNo, "field");
+        }
+        else if ("m".equals(kind)) {
+          ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "method");
+          String descriptor = decodeTinyString(columns[1], escapedNames, mappingPath, lineNo, "method descriptor");
+          String fromName = decodeTinyString(columns[2 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "method source name");
+          String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "method target name");
+
+          currentMethodSource = new MemberKey(currentClass, fromName, descriptor);
+          MemberKey currentMethodTarget = toTargetMethodKey(currentMethodSource, toName, classRenames);
+          currentMethodPhaseKeys = buildMethodPhaseKeys(currentMethodSource, currentMethodTarget);
+
+          addRename(methodRenames, currentMethodSource, fromName, toName, mappingPath, lineNo, "method");
+        }
+
+        continue;
+      }
+
+      if (indent == 2 && "p".equals(kind) && currentMethodSource != null) {
+        ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "parameter");
+
+        int lvIndex = parseLocalVariableIndex(columns[1], mappingPath, lineNo);
+        String fromName = decodeTinyString(columns[2 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "parameter source name");
+        String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "parameter target name");
+
+        boolean added = addParameterRename(parameterRenames, currentMethodSource, lvIndex, fromName, toName, mappingPath, lineNo);
+        for (MemberKey phaseKey : currentMethodPhaseKeys) {
+          if (!phaseKey.equals(currentMethodSource)) {
+            addParameterRename(parameterRenames, phaseKey, lvIndex, fromName, toName, mappingPath, lineNo);
+          }
+        }
+
+        if (added) {
+          parameterEntryCount++;
+        }
+      }
+    }
+
+    return new ParsedMembers(fieldRenames, methodRenames, parameterRenames, parameterEntryCount);
+  }
+
+  private static int parseLocalVariableIndex(String rawValue, Path mappingPath, int lineNo) throws IOException {
+    final int lvIndex;
+    try {
+      lvIndex = Integer.parseInt(rawValue);
+    }
+    catch (NumberFormatException ex) {
+      throw new IOException("Invalid Tiny parameter local variable index at " + mappingPath + ":" + lineNo + ": '" + rawValue + "'", ex);
+    }
+
+    if (lvIndex < 0) {
+      throw new IOException("Invalid Tiny parameter local variable index at " + mappingPath + ":" + lineNo + ": must be non-negative");
+    }
+
+    return lvIndex;
+  }
+
+  private static MemberKey toTargetMethodKey(MemberKey source, String targetName, Map<String, String> classRenames) {
+    String mappedOwner = classRenames.getOrDefault(source.owner(), source.owner());
+    String mappedDescriptor = remapMethodDescriptor(source.descriptor(), classRenames);
+    return new MemberKey(mappedOwner, targetName, mappedDescriptor);
+  }
+
+  private static List<MemberKey> buildMethodPhaseKeys(MemberKey source, MemberKey target) {
+    LinkedHashSet<MemberKey> keys = new LinkedHashSet<>();
+
+    String[] owners = {source.owner(), target.owner()};
+    String[] names = {source.name(), target.name()};
+    String[] descriptors = {source.descriptor(), target.descriptor()};
+
+    for (String owner : owners) {
+      for (String name : names) {
+        for (String descriptor : descriptors) {
+          keys.add(new MemberKey(owner, name, descriptor));
+        }
+      }
+    }
+
+    return List.copyOf(keys);
+  }
+
   private static Header parseHeader(String line, Path mappingPath) throws IOException {
     String normalized = line.stripLeading();
     if (!normalized.isEmpty() && normalized.charAt(0) == '\uFEFF') {
@@ -287,6 +349,31 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
 
     return new Header(Arrays.asList(namespaces));
+  }
+
+  private static boolean hasEscapedNamesProperty(List<String> lines) {
+    for (int lineNo = 2; lineNo <= lines.size(); lineNo++) {
+      String line = lines.get(lineNo - 1);
+      int indent = countLeadingTabs(line);
+      String body = line.substring(indent);
+
+      if (body.isBlank() || body.startsWith("#")) {
+        continue;
+      }
+
+      if (indent == 0) {
+        break;
+      }
+
+      if (indent == 1) {
+        String[] columns = body.split("\t", -1);
+        if (columns.length >= 1 && "escaped-names".equals(columns[0])) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   private static int findNamespaceIndex(List<String> namespaces, String requestedNamespace, int fallback, String role, Path mappingPath) throws IOException {
@@ -386,102 +473,14 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
   }
 
-  private static List<MemberKey> buildParameterMethodKeys(MemberKey source, MemberKey target) {
-    LinkedHashSet<String> owners = new LinkedHashSet<>();
-    LinkedHashSet<String> names = new LinkedHashSet<>();
-    LinkedHashSet<String> descriptors = new LinkedHashSet<>();
-
-    addOwnerWithDefpackageNormalization(owners, source.owner());
-    addOwnerWithDefpackageNormalization(owners, target.owner());
-    names.add(source.name());
-    names.add(target.name());
-    addDescriptorWithDefpackageNormalization(descriptors, source.descriptor());
-    addDescriptorWithDefpackageNormalization(descriptors, target.descriptor());
-
-    LinkedHashSet<MemberKey> keys = new LinkedHashSet<>();
-    for (String owner : owners) {
-      for (String name : names) {
-        for (String descriptor : descriptors) {
-          keys.add(new MemberKey(owner, name, descriptor));
-        }
-      }
-    }
-
-    return List.copyOf(keys);
-  }
-
-  private static MemberKey normalizeDefpackageMethodKey(MemberKey key) {
-    if (key == null) {
-      return null;
-    }
-
-    String owner = stripDefpackageOwner(key.owner());
-    String descriptor = stripDefpackageDescriptor(key.descriptor());
-    if (owner.equals(key.owner()) && descriptor.equals(key.descriptor())) {
-      return key;
-    }
-    return new MemberKey(owner, key.name(), descriptor);
-  }
-
-  private static void addOwnerWithDefpackageNormalization(Set<String> sink, String value) {
-    sink.add(value);
-    String normalized = stripDefpackageOwner(value);
-    if (!normalized.equals(value)) {
-      sink.add(normalized);
-    }
-  }
-
-  private static void addDescriptorWithDefpackageNormalization(Set<String> sink, String value) {
-    sink.add(value);
-    String normalized = stripDefpackageDescriptor(value);
-    if (!normalized.equals(value)) {
-      sink.add(normalized);
-    }
-  }
-
-  private static String stripDefpackageOwner(String owner) {
-    if (owner == null || owner.isEmpty() || !owner.startsWith("defpackage/")) {
-      return owner;
-    }
-    return owner.substring("defpackage/".length());
-  }
-
-  private static String stripDefpackageDescriptor(String descriptor) {
-    if (descriptor == null || descriptor.isEmpty() || descriptor.indexOf("defpackage/") < 0) {
-      return descriptor;
-    }
-
-    StringBuilder out = new StringBuilder(descriptor.length());
-    int index = 0;
-    while (index < descriptor.length()) {
-      char ch = descriptor.charAt(index);
-      if (ch != 'L') {
-        out.append(ch);
-        index++;
-        continue;
-      }
-
-      int semicolon = descriptor.indexOf(';', index);
-      if (semicolon < 0) {
-        return descriptor;
-      }
-
-      String typeName = descriptor.substring(index + 1, semicolon);
-      typeName = stripDefpackageOwner(typeName);
-      out.append('L').append(typeName).append(';');
-      index = semicolon + 1;
-    }
-
-    return out.toString();
-  }
-
-  private static String unescape(String value) {
-    if (value.indexOf('\\') < 0) {
+  private static String decodeTinyString(String value, boolean escapedNames, Path mappingPath, int lineNo, String context) throws IOException {
+    if (!escapedNames || value.indexOf('\\') < 0) {
       return value;
     }
 
     StringBuilder sb = new StringBuilder(value.length());
     boolean escaped = false;
+
     for (int i = 0; i < value.length(); i++) {
       char c = value.charAt(i);
       if (!escaped) {
@@ -491,22 +490,25 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
         else {
           sb.append(c);
         }
+        continue;
       }
-      else {
-        switch (c) {
-          case 'n' -> sb.append('\n');
-          case 'r' -> sb.append('\r');
-          case 't' -> sb.append('\t');
-          case '0' -> sb.append('\0');
-          case '\\' -> sb.append('\\');
-          default -> sb.append(c);
-        }
-        escaped = false;
+
+      switch (c) {
+        case 'n' -> sb.append('\n');
+        case 'r' -> sb.append('\r');
+        case 't' -> sb.append('\t');
+        case '0' -> sb.append('\0');
+        case '\\' -> sb.append('\\');
+        default -> throw new IOException(
+          "Invalid Tiny escape sequence '\\" + c + "' in " + context + " at " + mappingPath + ":" + lineNo
+        );
       }
+
+      escaped = false;
     }
 
     if (escaped) {
-      sb.append('\\');
+      throw new IOException("Dangling Tiny escape in " + context + " at " + mappingPath + ":" + lineNo);
     }
 
     return sb.toString();
@@ -536,6 +538,13 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
   }
 
+  private record ParsedMembers(
+    Map<MemberKey, String> fieldRenames,
+    Map<MemberKey, String> methodRenames,
+    Map<MemberKey, Map<Integer, String>> parameterRenames,
+    int parameterEntryCount
+  ) { }
+
   private static final class Tiny2ParameterNameFactory implements IVariableNamingFactory {
     private final Map<MemberKey, Map<Integer, String>> parameterRenames;
     private final IVariableNamingFactory delegateFactory;
@@ -547,27 +556,10 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
     @Override
     public @NotNull IVariableNameProvider createFactory(StructMethod structMethod) {
-      Map<Integer, String> names = findParameterRenames(structMethod.getClassQualifiedName(), structMethod.getName(), structMethod.getDescriptor());
+      MemberKey methodKey = new MemberKey(structMethod.getClassQualifiedName(), structMethod.getName(), structMethod.getDescriptor());
+      Map<Integer, String> names = parameterRenames.getOrDefault(methodKey, Collections.emptyMap());
       IVariableNameProvider delegate = delegateFactory != null ? delegateFactory.createFactory(structMethod) : null;
       return new Tiny2ParameterNameProvider(structMethod, names, delegate);
-    }
-
-    private Map<Integer, String> findParameterRenames(String owner, String name, String descriptor) {
-      MemberKey exact = new MemberKey(owner, name, descriptor);
-      Map<Integer, String> names = parameterRenames.get(exact);
-      if (names != null) {
-        return names;
-      }
-
-      MemberKey normalized = normalizeDefpackageMethodKey(exact);
-      if (!normalized.equals(exact)) {
-        names = parameterRenames.get(normalized);
-        if (names != null) {
-          return names;
-        }
-      }
-
-      return Collections.emptyMap();
     }
   }
 

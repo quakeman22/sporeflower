@@ -149,4 +149,48 @@ c\tb\tpkg/B
       Files.deleteIfExists(mapping);
     }
   }
+
+  @Test
+  public void testTiny2ParameterLookupSupportsMixedRenamePhaseKeys() throws IOException {
+    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
+    try {
+      Files.writeString(mapping, """
+tiny\t2\t0\tofficial\tnamed
+c\tag\tdefpackage/GameLevel
+\tm\t(IIIII)Lj;\ta\tcreateEntity
+\t\tp\t1\tp0\tentityType
+\t\tp\t2\tp1\ttileX
+\t\tp\t3\tp2\ttileY
+\t\tp\t4\tp3\tlayerIndex
+\t\tp\t5\tp4\tdirection
+c\tj\tdefpackage/Entity
+""", StandardCharsets.UTF_8);
+
+      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+
+      assertEquals("entityType", renamer.getParameterRename("ag", "a", "(IIIII)Lj;", 1));
+      assertEquals("entityType", renamer.getParameterRename("defpackage/GameLevel", "createEntity", "(IIIII)Lj;", 1));
+      assertEquals("entityType", renamer.getParameterRename("defpackage/GameLevel", "createEntity", "(IIIII)Ldefpackage/Entity;", 1));
+    } finally {
+      Files.deleteIfExists(mapping);
+    }
+  }
+
+  @Test
+  public void testTiny2EscapedNamesPropertyDecodesEscapes() throws IOException {
+    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
+    try {
+      Files.writeString(mapping, """
+tiny\t2\t0\tofficial\tnamed
+\tescaped-names
+c\taf\tdefpackage/GameEngine
+\tm\t(I)V\ta\tset\\tvalue
+""", StandardCharsets.UTF_8);
+
+      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+      assertEquals("set\tvalue", renamer.getNextMethodName("af", "a", "(I)V"));
+    } finally {
+      Files.deleteIfExists(mapping);
+    }
+  }
 }
