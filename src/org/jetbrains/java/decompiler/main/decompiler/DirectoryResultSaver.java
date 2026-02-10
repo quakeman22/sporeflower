@@ -23,6 +23,15 @@ public class DirectoryResultSaver implements IResultSaver {
   public void saveClassEntry(String path, String archiveName, String qualifiedName, String entryName, String content) {
     Path entryPath = this.root.resolve(entryName);
 
+    try {
+      Path parent = entryPath.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+    } catch (IOException e) {
+      throw new RuntimeException("Failed to create class parent directory", e);
+    }
+
     try (BufferedWriter writer = Files.newBufferedWriter(entryPath)) {
       if (content != null) {
         writer.write(content);
@@ -70,6 +79,15 @@ public class DirectoryResultSaver implements IResultSaver {
   @Override
   public void saveClassFile(String path, String qualifiedName, String entryName, String content, int[] mapping) {
     Path entryPath = this.root.resolve(path).resolve(entryName);
+
+    try {
+      Path parent = entryPath.getParent();
+      if (parent != null) {
+        Files.createDirectories(parent);
+      }
+    } catch (IOException e) {
+      throw new RuntimeException("Failed to create class parent directory", e);
+    }
 
     try (BufferedWriter writer = Files.newBufferedWriter(entryPath)) {
       if (content != null) {

@@ -284,6 +284,21 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.STRING)
   String USER_RENAMER_CLASS = "user-renamer-class";
 
+  @Name("Mappings Path")
+  @Description("Path to a Tiny v2 mapping file used for class, field, and method renaming.")
+  @Type(DecompilerOption.Type.STRING)
+  String MAPPINGS_PATH = "mappings-path";
+
+  @Name("Mappings Source Namespace")
+  @Description("Source namespace name in the Tiny v2 mapping file. Defaults to the first namespace.")
+  @Type(DecompilerOption.Type.STRING)
+  String MAPPINGS_SOURCE_NAMESPACE = "mappings-source-namespace";
+
+  @Name("Mappings Target Namespace")
+  @Description("Target namespace name in the Tiny v2 mapping file. Defaults to the second namespace.")
+  @Type(DecompilerOption.Type.STRING)
+  String MAPPINGS_TARGET_NAMESPACE = "mappings-target-namespace";
+
   @Name("[DEPRECATED] New Line Seperator")
   @Description("Use \\n instead of \\r\\n for new lines. Deprecated, do not use.")
   @ShortName("nls")
@@ -465,6 +480,9 @@ public interface IFernflowerPreferences {
     defaults.put(LOG_LEVEL, IFernflowerLogger.Severity.INFO.name());
     defaults.put(MAX_PROCESSING_METHOD, "0");
     defaults.put(RENAME_ENTITIES, "0");
+    defaults.put(MAPPINGS_PATH, "");
+    defaults.put(MAPPINGS_SOURCE_NAMESPACE, "");
+    defaults.put(MAPPINGS_TARGET_NAMESPACE, "");
     defaults.put(NEW_LINE_SEPARATOR, "1");
     defaults.put(INDENT_STRING, "   ");
     defaults.put(PREFERRED_LINE_LENGTH, "160");

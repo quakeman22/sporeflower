@@ -153,7 +153,9 @@ public class IdentifierConverter implements NewClassNameBuilder {
 
       do {
         String classname = helper.getNextClassName(classOldFullName, ConverterHelper.getSimpleClassName(classOldFullName));
-        classNewFullName = ConverterHelper.replaceSimpleClassName(classOldFullName, classname);
+        classNewFullName = classname.indexOf('/') >= 0
+          ? classname
+          : ConverterHelper.replaceSimpleClassName(classOldFullName, classname);
       }
       while (context.hasClass(classNewFullName));
 
@@ -218,18 +220,26 @@ public class IdentifierConverter implements NewClassNameBuilder {
 
     // fields
     // FIXME: should overloaded fields become the same name?
-    HashSet<String> setFieldNames = new HashSet<>();
+    HashSet<String> occupiedFieldNames = new HashSet<>();
+    Set<StructField> renamedFields = new HashSet<>();
     for (StructField fd : cl.getFields()) {
-      setFieldNames.add(fd.getName());
+      if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, classOldFullName, fd.getName(), fd.getDescriptor())) {
+        renamedFields.add(fd);
+      }
+      else {
+        occupiedFieldNames.add(fd.getName());
+      }
     }
 
     for (StructField fd : cl.getFields()) {
-      if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, classOldFullName, fd.getName(), fd.getDescriptor())) {
+      if (renamedFields.contains(fd)) {
         String newName;
         do {
           newName = helper.getNextFieldName(classOldFullName, fd.getName(), fd.getDescriptor());
         }
-        while (setFieldNames.contains(newName));
+        while (occupiedFieldNames.contains(newName));
+
+        occupiedFieldNames.add(newName);
 
         interceptor.addName(classOldFullName + " " + fd.getName() + " " + fd.getDescriptor(),
                             classNewFullName + " " + newName + " " + buildNewDescriptor(true, fd.getDescriptor()));

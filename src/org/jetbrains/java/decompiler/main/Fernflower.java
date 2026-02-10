@@ -14,6 +14,7 @@ import org.jetbrains.java.decompiler.main.plugins.PluginSources;
 import org.jetbrains.java.decompiler.modules.renamer.ConverterHelper;
 import org.jetbrains.java.decompiler.modules.renamer.IdentifierConverter;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
+import org.jetbrains.java.decompiler.modules.renamer.Tiny2IdentifierRenamer;
 import org.jetbrains.java.decompiler.struct.IDecompiledData;
 import org.jetbrains.java.decompiler.main.plugins.PluginContext;
 import org.jetbrains.java.decompiler.struct.StructClass;
@@ -25,6 +26,7 @@ import org.jetbrains.java.decompiler.util.TextBuffer;
 import org.jetbrains.java.decompiler.util.token.TextTokenDumpVisitor;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -66,9 +68,15 @@ public class Fernflower implements IDecompiledData {
     structContext = new StructContext(provider, saver, this);
     classProcessor = new ClassesProcessor(structContext);
 
+    String mappingsPath = trimToNull(properties.get(IFernflowerPreferences.MAPPINGS_PATH));
+    if (mappingsPath != null && !isOptionEnabled(properties.get(IFernflowerPreferences.RENAME_ENTITIES))) {
+      properties.put(IFernflowerPreferences.RENAME_ENTITIES, "1");
+      logger.writeMessage("Enabled --rename-members because --mappings-path is set.", IFernflowerLogger.Severity.INFO);
+    }
+
     PoolInterceptor interceptor = null;
-    if ("1".equals(properties.get(IFernflowerPreferences.RENAME_ENTITIES))) {
-      helper = loadHelper((String)properties.get(IFernflowerPreferences.USER_RENAMER_CLASS), logger);
+    if (isOptionEnabled(properties.get(IFernflowerPreferences.RENAME_ENTITIES))) {
+      helper = loadHelper(properties, logger);
       interceptor = new PoolInterceptor();
       converter = new IdentifierConverter(structContext, helper, interceptor);
     }
@@ -91,6 +99,9 @@ public class Fernflower implements IDecompiledData {
     if (renamer == null) {
       renamer = new IdentityRenamerFactory();
     }
+    if (helper instanceof Tiny2IdentifierRenamer tiny2Renamer) {
+      renamer = tiny2Renamer.createVariableNamingFactory(renamer);
+    }
 
     context.renamerFactory = renamer;
 
@@ -111,7 +122,8 @@ public class Fernflower implements IDecompiledData {
     }
   }
 
-  private static IIdentifierRenamer loadHelper(String className, IFernflowerLogger logger) {
+  private static IIdentifierRenamer loadHelper(Map<String, Object> properties, IFernflowerLogger logger) {
+    String className = trimToNull(properties.get(IFernflowerPreferences.USER_RENAMER_CLASS));
     if (className != null) {
       try {
         Class<?> renamerClass = Fernflower.class.getClassLoader().loadClass(className);
@@ -122,7 +134,44 @@ public class Fernflower implements IDecompiledData {
       }
     }
 
+    String mappingsPath = trimToNull(properties.get(IFernflowerPreferences.MAPPINGS_PATH));
+    if (mappingsPath != null) {
+      String sourceNamespace = trimToNull(properties.get(IFernflowerPreferences.MAPPINGS_SOURCE_NAMESPACE));
+      String targetNamespace = trimToNull(properties.get(IFernflowerPreferences.MAPPINGS_TARGET_NAMESPACE));
+      try {
+        Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(Path.of(mappingsPath), sourceNamespace, targetNamespace);
+        logger.writeMessage(
+          "Loaded Tiny v2 mappings: " + mappingsPath
+            + " (classes=" + renamer.classRenameCount()
+            + ", fields=" + renamer.fieldRenameCount()
+            + ", methods=" + renamer.methodRenameCount()
+            + ", params=" + renamer.parameterRenameCount() + ")",
+          IFernflowerLogger.Severity.INFO
+        );
+        return renamer;
+      }
+      catch (Exception e) {
+        logger.writeMessage("Cannot load Tiny mappings '" + mappingsPath + "'", IFernflowerLogger.Severity.WARN, e);
+      }
+    }
+
     return new ConverterHelper();
+  }
+
+  private static boolean isOptionEnabled(Object value) {
+    if (value == null) {
+      return false;
+    }
+    String s = value.toString();
+    return "1".equals(s) || "true".equalsIgnoreCase(s);
+  }
+
+  private static String trimToNull(Object value) {
+    if (value == null) {
+      return null;
+    }
+    String s = value.toString().trim();
+    return s.isEmpty() ? null : s;
   }
 
   public void addSource(IContextSource source) {
@@ -170,8 +219,7 @@ public class Fernflower implements IDecompiledData {
       return null;
     }
     else if (converter != null) {
-      String simpleClassName = cl.qualifiedName.substring(cl.qualifiedName.lastIndexOf('/') + 1);
-      return entryName.substring(0, entryName.lastIndexOf('/') + 1) + simpleClassName + "." + extension;
+      return cl.qualifiedName + "." + extension;
     }
     else {
       final int clazzIdx = entryName.lastIndexOf(".class");
