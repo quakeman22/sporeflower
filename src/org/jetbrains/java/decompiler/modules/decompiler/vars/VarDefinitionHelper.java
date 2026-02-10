@@ -460,27 +460,30 @@ public class VarDefinitionHelper {
             case FIELD:
             case EXIT:
               Exprent instance = null;
-              String target = null;
+              VarType newType = null;
               if (exp instanceof InvocationExprent) {
                 instance = ((InvocationExprent)exp).getInstance();
-                target = ((InvocationExprent)exp).getClassname();
+                newType = new VarType(CodeType.OBJECT, 0, ((InvocationExprent)exp).getClassname());
               } else if (exp instanceof FieldExprent) {
                 instance = ((FieldExprent)exp).getInstance();
-                target = ((FieldExprent)exp).getClassname();
+                newType = new VarType(CodeType.OBJECT, 0, ((FieldExprent)exp).getClassname());
               } else if (exp instanceof ExitExprent) {
                 ExitExprent exit = (ExitExprent)exp;
                 if (exit.getExitType() == ExitExprent.Type.RETURN) {
                   instance = exit.getValue();
-                  target = exit.getRetType().value;
+                  newType = exit.getRetType();
                 }
               }
 
-              if ("java/lang/Object".equals(target))
-                  continue; //This is dirty, but if we don't then too many things become object...
+              if (newType == null || newType.typeFamily != TypeFamily.OBJECT) {
+                continue;
+              }
+              if (newType.arrayDim == 0 && "java/lang/Object".equals(newType.value)) {
+                continue; // This is dirty, but if we don't then too many things become object...
+              }
 
               if (instance != null && instance instanceof VarExprent) {
                 VarVersionPair key = ((VarExprent)instance).getVarVersionPair();
-                VarType newType = new VarType(CodeType.OBJECT, 0, target);
                 VarType oldMin = mapExprentMinTypes.get(key);
                 VarType oldMax = mapExprentMaxTypes.get(key);
 
@@ -496,12 +499,14 @@ public class VarDefinitionHelper {
                 */
 
                 if (!newType.equals(oldMax)) {
-                  if (oldMax != null && oldMax.type == CodeType.OBJECT) {
-                    // If the old min is an instanceof the new target, EXA: List -> ArrayList
-                    if (DecompilerContext.getStructContext().instanceOf(newType.value, oldMax.value))
+                  if (oldMax != null && oldMax.typeFamily == TypeFamily.OBJECT) {
+                    // If old max is above this type in the lattice, tighten it.
+                    if (oldMax.higherEqualInLatticeThan(newType)) {
                       mapExprentMaxTypes.put(key, newType);
-                  } else
+                    }
+                  } else {
                     mapExprentMaxTypes.put(key, newType);
+                  }
                 }
               }
 
