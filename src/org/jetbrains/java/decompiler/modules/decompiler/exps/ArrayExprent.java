@@ -1,8 +1,12 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
+import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.main.DecompilerContext;
+import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.CheckTypesResult;
+import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.TextBuffer;
@@ -33,10 +37,16 @@ public class ArrayExprent extends Exprent {
   public VarType getExprType() {
     VarType exprType = array.getExprType();
     if (exprType.equals(VarType.VARTYPE_NULL)) {
-      return hardType;
+      return fallbackElementType();
     }
-    else {
-      return exprType.decreaseArrayDim();
+    else if (exprType.arrayDim == 0) {
+      return fallbackElementType();
+    } else {
+      VarType elementType = exprType.decreaseArrayDim();
+      if (elementType.typeFamily == VarType.VARTYPE_OBJECT.typeFamily && hardType.typeFamily != VarType.VARTYPE_OBJECT.typeFamily) {
+        return fallbackElementType();
+      }
+      return elementType;
     }
   }
 
@@ -44,10 +54,16 @@ public class ArrayExprent extends Exprent {
   public VarType getInferredExprType(VarType upperBound) {
     VarType exprType = array.getInferredExprType(upperBound);
     if (exprType.equals(VarType.VARTYPE_NULL)) {
-      return hardType;
+      return fallbackElementType();
     }
-    else {
-      return exprType.decreaseArrayDim();
+    else if (exprType.arrayDim == 0) {
+      return fallbackElementType();
+    } else {
+      VarType elementType = exprType.decreaseArrayDim();
+      if (elementType.typeFamily == VarType.VARTYPE_OBJECT.typeFamily && hardType.typeFamily != VarType.VARTYPE_OBJECT.typeFamily) {
+        return fallbackElementType();
+      }
+      return elementType;
     }
   }
 
@@ -80,10 +96,10 @@ public class ArrayExprent extends Exprent {
     }
 
     VarType arrType = array.getExprType();
-    if (arrType.arrayDim == 0) {
-      VarType objArr = VarType.VARTYPE_OBJECT.resizeArrayDim(1); // type family does not change
-      res.enclose("((" + ExprProcessor.getCastTypeName(objArr) + ")", ")");
-      res.addTypeNameToken(objArr, 2);
+    if (arrType.arrayDim == 0 || shouldCastToFallbackArrayType(arrType)) {
+      VarType castType = fallbackArrayType();
+      res.enclose("((" + ExprProcessor.getCastTypeName(castType) + ")", ")");
+      res.addTypeNameToken(castType, 2);
     }
 
     res.addBytecodeMapping(bytecode);
@@ -127,6 +143,55 @@ public class ArrayExprent extends Exprent {
 
   public Exprent getIndex() {
     return index;
+  }
+
+  private VarType fallbackElementType() {
+    // `baload` is shared by byte[] and boolean[]; when type information is lost,
+    // keep it in the integer/boolean lattice instead of collapsing to plain boolean.
+    if (hardType.equals(VarType.VARTYPE_BOOLEAN)) {
+      return VarType.VARTYPE_BYTECHAR;
+    }
+    return hardType;
+  }
+
+  private VarType fallbackArrayType() {
+    VarType elementType = fallbackElementType();
+    if (elementType.equals(VarType.VARTYPE_BYTECHAR)) {
+      return VarType.VARTYPE_BYTE.resizeArrayDim(1);
+    }
+    return elementType.resizeArrayDim(1);
+  }
+
+  private boolean shouldCastToFallbackArrayType(VarType arrType) {
+    VarType elementType = arrType.decreaseArrayDim();
+    // Primitive array loads (`xaload` except `aaload`) can degrade to Object when locals are aggressively reused.
+    // Keep an explicit cast so codegen remains valid and keeps the primitive semantics of the bytecode instruction.
+    if (elementType.typeFamily == VarType.VARTYPE_OBJECT.typeFamily && hardType.typeFamily != VarType.VARTYPE_OBJECT.typeFamily) {
+      return true;
+    }
+
+    if (!(array instanceof VarExprent varExpr)) {
+      return false;
+    }
+
+    MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+    if (method == null) {
+      return false;
+    }
+
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.methodStruct.getDescriptor());
+    Integer originalIndex = varExpr.getProcessor() == null ? null : varExpr.getProcessor().getVarOriginalIndex(varExpr.getIndex());
+    int resolvedIndex = originalIndex == null ? varExpr.getIndex() : originalIndex;
+    int slot = method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
+    for (VarType paramType : descriptor.params) {
+      // If this expression points at a non-array method parameter slot, force a cast so we don't emit `param[idx]`.
+      if (slot == resolvedIndex) {
+        return paramType.arrayDim == 0;
+      }
+      slot += paramType.stackSize;
+    }
+
+    return false;
   }
   
   @Override

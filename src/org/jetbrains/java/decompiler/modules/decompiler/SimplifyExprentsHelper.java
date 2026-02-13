@@ -125,6 +125,13 @@ public class SimplifyExprentsHelper {
         continue;
       }
 
+      // Split nested assignment expressions into standalone statements for readability.
+      // This keeps semantics but avoids constructs like `((T)(x = ...))[i]`.
+      if (hoistInlineAssignment(list, index)) {
+        res = true;
+        continue;
+      }
+
       // trivial assignment of a stack variable
       if (isTrivialStackAssignment(current)) {
         list.remove(index);
@@ -444,6 +451,94 @@ public class SimplifyExprentsHelper {
     }
 
     return false;
+  }
+
+  private static boolean hoistInlineAssignment(List<Exprent> list, int index) {
+    Exprent current = list.get(index);
+    AssignmentExprent inline = extractHoistableInlineAssignment(current);
+    if (inline == null) {
+      return false;
+    }
+
+    list.add(index, inline);
+    return true;
+  }
+
+  private static AssignmentExprent extractHoistableInlineAssignment(Exprent expr) {
+    if (expr instanceof AssignmentExprent assignment) {
+      if (assignment.getLeft() instanceof ArrayExprent) {
+        AssignmentExprent left = extractHoistableInlineAssignment(assignment.getLeft());
+        if (left != null) {
+          return left;
+        }
+      }
+      return extractHoistableInlineAssignment(assignment.getRight());
+    }
+
+    if (expr instanceof ArrayExprent array) {
+      Exprent base = array.getArray();
+      if (base instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment)) {
+        array.replaceExprent(base, assignment.getLeft().copy());
+        return assignment;
+      }
+
+      AssignmentExprent nestedBase = extractHoistableInlineAssignment(base);
+      if (nestedBase != null) {
+        return nestedBase;
+      }
+
+      return extractHoistableInlineAssignment(array.getIndex());
+    }
+
+    if (expr instanceof FunctionExprent function) {
+      List<Exprent> operands = function.getLstOperands();
+      FunctionType type = function.getFuncType();
+
+      if (type == FunctionType.CAST && !operands.isEmpty()) {
+        Exprent value = operands.get(0);
+        if (value instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment)) {
+          operands.set(0, assignment.getLeft().copy());
+          return assignment;
+        }
+      } else if ((type == FunctionType.EQ || type == FunctionType.NE) && operands.size() == 2) {
+        Exprent left = operands.get(0);
+        Exprent right = operands.get(1);
+
+        if (left instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment) && isNullConst(right)) {
+          operands.set(0, assignment.getLeft().copy());
+          return assignment;
+        }
+        if (right instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment) && isNullConst(left)) {
+          operands.set(1, assignment.getLeft().copy());
+          return assignment;
+        }
+      }
+
+      for (Exprent operand : operands) {
+        AssignmentExprent nested = extractHoistableInlineAssignment(operand);
+        if (nested != null) {
+          return nested;
+        }
+      }
+    }
+
+    if (expr instanceof IfExprent ifExprent) {
+      Exprent condition = ifExprent.getCondition();
+      AssignmentExprent assignment = extractHoistableInlineAssignment(condition);
+      if (assignment != null) {
+        return assignment;
+      }
+    }
+
+    return null;
+  }
+
+  private static boolean isHoistableInlineAssignment(AssignmentExprent assignment) {
+    return assignment.getCondType() == null && assignment.getLeft() instanceof VarExprent && !((VarExprent)assignment.getLeft()).isStack();
+  }
+
+  private static boolean isNullConst(Exprent expr) {
+    return expr instanceof ConstExprent && ((ConstExprent)expr).isNull();
   }
 
   /*

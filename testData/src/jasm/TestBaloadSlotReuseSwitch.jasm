@@ -1,0 +1,59 @@
+package pkg;
+
+/**
+ * Reproducer for a local slot reused from Object[] to byte[] and then read via baload in a switch selector.
+ * The decompiler must keep byte semantics and avoid emitting invalid Object[] switch selectors.
+ */
+super public class TestBaloadSlotReuseSwitch
+  version 49:0
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(ILjava/util/Vector;)I"
+  stack 4 locals 3
+{
+  aload_1;
+  iload_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  aconst_null;
+  astore_0;
+  checkcast "[Ljava/lang/Object;";
+  dup;
+  astore_0;
+  iconst_1;
+  aaload;
+  checkcast "[B";
+  astore_0;
+  iconst_0;
+  istore_2;
+  aload_0;
+  iload_2;
+  iload_2;
+  iconst_1;
+  iadd;
+  i2b;
+  istore_2;
+  baload;
+  lookupswitch{ //2
+    119: L1;
+    120: L2;
+    default: L3 };
+L1:
+  iconst_1;
+  ireturn;
+L2:
+  iconst_2;
+  ireturn;
+L3:
+  iconst_0;
+  ireturn;
+}
+
+} // end Class TestBaloadSlotReuseSwitch

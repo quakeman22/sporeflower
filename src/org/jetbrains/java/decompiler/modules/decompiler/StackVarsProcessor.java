@@ -451,6 +451,14 @@ public class StackVarsProcessor {
 
     int useflags = right.getExprentUse();
 
+    if (!left.isStack() && right instanceof AssignmentExprent) {
+      // Assignment expressions are valid Java, but inlining them into regular
+      // locals often produces hard-to-read constructs like
+      // `((Type)(tmp = (Type2)x))[0]`. Keep the explicit assignment statement.
+      setRet(ret, -1, changed);
+      return;
+    }
+
     // stack variables only
     if ((!left.isStack() && !options.inlineRegularVars) &&
         (!(right instanceof VarExprent variable) || !variable.isCatchTempVar())) { // special case catch(... ex)
