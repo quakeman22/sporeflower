@@ -1,0 +1,37 @@
+package pkg;
+
+/**
+ * Reproducer for obfuscated bytecode that stores null into a local slot and then reuses the same slot for an int used in
+ * a switch. This should not decompile into invalid Java like `int varX = null;`.
+ */
+super public class TestDeadNullStoreSlotReuseSwitch
+  version 49:0
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(I)V"
+  stack 1 locals 2
+{
+  aconst_null;
+  astore_1;
+  iload_0;
+  istore_1;
+  iload_1;
+  lookupswitch{ //1
+    1: L1;
+    default: L2 };
+L1:
+  return;
+L2:
+  return;
+}
+
+} // end Class TestDeadNullStoreSlotReuseSwitch
+

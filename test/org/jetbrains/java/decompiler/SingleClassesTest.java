@@ -576,6 +576,7 @@ public class SingleClassesTest extends SingleClassesTestBase {
     register(JAVA_8, "TestTernaryReturn");
     register(JAVA_8, "TestArrayAssign");
     register(JASM, "TestGoto");
+    register(JASM, "TestDeadNullStoreSlotReuseSwitch");
     register(JAVA_8, "TestLambdaQualified");
     register(JAVA_16, "TestTernaryReturn2");
     register(JAVA_8, "TestGenericMap");

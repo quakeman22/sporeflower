@@ -1,0 +1,62 @@
+package pkg;
+
+public class TestDeadNullStoreSlotReuseSwitch {
+   private TestDeadNullStoreSlotReuseSwitch() {
+   }// 16
+
+   public static void test(int var0) {
+      int var1 = var0;// 24 25
+      switch (var1) {// 26 27
+         case 1:
+            return;// 31
+      }
+   }// 33
+}
+
+class 'pkg/TestDeadNullStoreSlotReuseSwitch' {
+   method '<init> ()V' {
+      4      4
+   }
+
+   method 'test (I)V' {
+      2      7
+      3      7
+      4      8
+      5      8
+      6      8
+      7      8
+      8      8
+      9      8
+      a      8
+      b      8
+      c      8
+      d      8
+      e      8
+      f      8
+      10      8
+      11      8
+      12      8
+      13      8
+      14      8
+      15      8
+      16      8
+      17      8
+      18      10
+      19      12
+   }
+}
+
+Lines mapping:
+16 <-> 5
+24 <-> 8
+25 <-> 8
+26 <-> 9
+27 <-> 9
+31 <-> 11
+33 <-> 13
+Not mapped:
+14
+15
+22
+23
+
