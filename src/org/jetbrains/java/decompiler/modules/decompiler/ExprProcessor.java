@@ -992,10 +992,13 @@ public class ExprProcessor implements CodeConstants {
       }
     }
 
-    VarType rightType = exprent.getInferredExprType(leftType);
+    VarType rightType = getRenderTypeForCastDecisions(exprent, leftType);
     exprent = narrowGenericCastType(exprent, leftType);
 
     boolean doCast = (!leftType.higherEqualInLatticeThan(rightType) && (rightType.equals(VarType.VARTYPE_OBJECT) || leftType.type != CodeType.OBJECT));
+    if (!doCast && needsReferenceNarrowingCast(leftType, rightType)) {
+      doCast = true;
+    }
     boolean doCastNull = (castNull.cast && rightType.type == CodeType.NULL && !UNDEFINED_TYPE_STRING.equals(getTypeName(leftType)));
     boolean doCastNarrowing = (castNarrowing && isIntConstant(exprent) && isNarrowedIntType(leftType));
     boolean doCastGenerics = doGenericTypesCast(exprent, leftType, rightType);
@@ -1051,6 +1054,35 @@ public class ExprProcessor implements CodeConstants {
     }
 
     return cast;
+  }
+
+  public static VarType getRenderTypeForCastDecisions(Exprent exprent, VarType upperBound) {
+    VarType inferredType = exprent.getInferredExprType(upperBound);
+
+    if (exprent instanceof VarExprent varExprent) {
+      VarType declaredReferenceType = varExprent.getDeclaredReferenceTypeForCast();
+      if (declaredReferenceType != null && inferredType != null && inferredType.type == CodeType.OBJECT) {
+        return declaredReferenceType;
+      }
+    }
+    else if (exprent instanceof AssignmentExprent assignmentExprent) {
+      return getRenderTypeForCastDecisions(assignmentExprent.getLeft(), upperBound);
+    }
+    else if (exprent instanceof FunctionExprent functionExprent
+      && functionExprent.getFuncType() == FunctionType.CAST
+      && !functionExprent.doesCast()) {
+      Exprent castOperand = functionExprent.getLstOperands().get(0);
+      return getRenderTypeForCastDecisions(castOperand, upperBound);
+    }
+
+    return inferredType;
+  }
+
+  public static boolean needsReferenceNarrowingCast(VarType leftType, VarType rightType) {
+    return leftType.type == CodeType.OBJECT
+      && rightType.type == CodeType.OBJECT
+      && !leftType.equals(VarType.VARTYPE_OBJECT)
+      && !leftType.higherEqualInLatticeThan(rightType);
   }
 
   public enum NullCastType {

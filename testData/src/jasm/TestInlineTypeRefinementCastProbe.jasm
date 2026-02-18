@@ -1,0 +1,27 @@
+package pkg;
+
+super public class TestInlineTypeRefinementCastProbe
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(Lpkg/SupportBase;)V"
+  stack 1 locals 1
+{
+  aload_0;
+  checkcast pkg/SupportDerived;
+  astore_0;
+  aload_0;
+  getfield Field pkg/SupportDerived.special:"I";
+  pop;
+  return;
+}
+
+} // end Class TestInlineTypeRefinementCastProbe

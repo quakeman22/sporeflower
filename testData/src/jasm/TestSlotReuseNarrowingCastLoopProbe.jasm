@@ -1,0 +1,40 @@
+package pkg;
+
+super public class TestSlotReuseNarrowingCastLoopProbe
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"()V"
+  stack 2 locals 2
+{
+  invokestatic Method pkg/SupportBase.produce:"()Lpkg/SupportBase;";
+  astore_0;
+  aload_0;
+  getfield Field pkg/SupportBase.value:"I";
+  pop;
+  iconst_0;
+  istore_1;
+L0:
+  iload_1;
+  iconst_1;
+  if_icmpge L1;
+  invokestatic Method pkg/SupportBase.produce:"()Lpkg/SupportBase;";
+  checkcast pkg/SupportDerived;
+  astore_0;
+  aload_0;
+  invokevirtual Method pkg/SupportDerived.ping:"()V";
+  iinc 1, 1;
+  goto L0;
+L1:
+  return;
+}
+
+} // end Class TestSlotReuseNarrowingCastLoopProbe

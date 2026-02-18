@@ -2,6 +2,7 @@
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.code.Instruction;
 import org.jetbrains.java.decompiler.main.ClassWriter;
@@ -33,17 +34,23 @@ import org.jetbrains.java.decompiler.struct.match.MatchNode;
 import org.jetbrains.java.decompiler.struct.match.MatchNode.RuleValue;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.Pair;
+import org.jetbrains.java.decompiler.util.StatementIterator;
 import org.jetbrains.java.decompiler.util.TextBuffer;
 
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
 public class VarExprent extends Exprent implements Pattern {
   public static final int STACK_BASE = 10000;
   public static final String VAR_NAMELESS_ENCLOSURE = "<VAR_NAMELESS_ENCLOSURE>";
   private static final boolean FORCE_VARVER_NAME = false; // Debug only!
+  private static final ThreadLocal<Map<MethodWrapper, Map<VarVersionPair, VarType>>> DECLARED_DEFINITION_TYPES =
+    ThreadLocal.withInitial(WeakHashMap::new);
 
   private int index;
   private VarType varType;
@@ -391,6 +398,93 @@ public class VarExprent extends Exprent implements Pattern {
     }
 
     return vt == null ? VarType.VARTYPE_UNKNOWN : vt;
+  }
+
+  @Nullable
+  public VarType getDeclaredParameterType() {
+    MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+    if (method == null || method.methodStruct == null) {
+      return null;
+    }
+
+    int originalIndex = index;
+    if (processor != null) {
+      Integer mappedIndex = processor.getVarOriginalIndex(index);
+      if (mappedIndex != null) {
+        originalIndex = mappedIndex;
+      }
+    }
+
+    if (!method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) && originalIndex == 0) {
+      return null;
+    }
+
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.methodStruct.getDescriptor());
+    int slot = method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
+    for (VarType parameter : descriptor.params) {
+      if (slot == originalIndex) {
+        return parameter;
+      }
+      slot += parameter.stackSize;
+    }
+
+    return null;
+  }
+
+  @Nullable
+  public VarType getDeclaredReferenceTypeForCast() {
+    VarType declaredParameterType = getDeclaredParameterType();
+    if (isConcreteReferenceType(declaredParameterType)) {
+      return declaredParameterType;
+    }
+
+    VarType declaredDefinitionType = getDeclaredDefinitionType();
+    if (isConcreteReferenceType(declaredDefinitionType)) {
+      return declaredDefinitionType;
+    }
+
+    return null;
+  }
+
+  @Nullable
+  private VarType getDeclaredDefinitionType() {
+    MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+    if (method == null || method.root == null) {
+      return null;
+    }
+
+    Map<MethodWrapper, Map<VarVersionPair, VarType>> cache = DECLARED_DEFINITION_TYPES.get();
+    Map<VarVersionPair, VarType> methodDeclaredTypes = cache.get(method);
+    if (methodDeclaredTypes == null) {
+      Map<VarVersionPair, VarType> computedDeclaredTypes = new HashMap<>();
+      VarProcessor currentProcessor = processor;
+      StatementIterator.iterate(method.root, exprent -> {
+        if (exprent instanceof VarExprent var && var.isDefinition()) {
+          if (currentProcessor != null && var.getProcessor() != null && var.getProcessor() != currentProcessor) {
+            return 0;
+          }
+
+          VarVersionPair pair = var.getVarVersionPair();
+          VarType definitionType = var.getDefinitionVarType();
+          VarType currentType = computedDeclaredTypes.get(pair);
+          if (currentType == null && !computedDeclaredTypes.containsKey(pair)) {
+            computedDeclaredTypes.put(pair, definitionType);
+          }
+          else {
+            computedDeclaredTypes.put(pair, VarType.join(currentType, definitionType));
+          }
+        }
+        return 0;
+      });
+      methodDeclaredTypes = computedDeclaredTypes;
+      cache.put(method, computedDeclaredTypes);
+    }
+
+    return methodDeclaredTypes.get(getVarVersionPair());
+  }
+
+  private static boolean isConcreteReferenceType(@Nullable VarType type) {
+    return type != null && type.type == CodeType.OBJECT && !type.equals(VarType.VARTYPE_OBJECT);
   }
 
   public void setVarType(VarType varType) {

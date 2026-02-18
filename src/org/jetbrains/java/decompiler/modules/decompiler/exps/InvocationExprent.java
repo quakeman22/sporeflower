@@ -774,7 +774,7 @@ public class InvocationExprent extends Exprent {
           }
 
           instance.setInvocationInstance();
-          VarType rightType = instance.getInferredExprType(leftType);
+          VarType rightType = ExprProcessor.getRenderTypeForCastDecisions(instance, leftType);
 
           if (isUnboxingCall() && !boxing.forceUnboxing) {
             // we don't print the unboxing call - no need to bother with the instance wrapping / casting
@@ -816,7 +816,8 @@ public class InvocationExprent extends Exprent {
           ClassNode instNode = DecompilerContext.getClassProcessor().getMapRootClasses().get(classname);
           // Don't cast to anonymous classes, since they by definition can't have a name
           // TODO: better fix may be to change equals to isSuperSet? all anonymous classes are superset of Object
-          if (rightType.equals(VarType.VARTYPE_OBJECT) && !leftType.equals(rightType) && (instNode != null && instNode.type != ClassNode.Type.ANONYMOUS)) {
+          boolean needsQualifierCast = ExprProcessor.needsReferenceNarrowingCast(leftType, rightType);
+          if (needsQualifierCast && (instNode == null || instNode.type != ClassNode.Type.ANONYMOUS)) {
             appendInstCast(buf, leftType, res);
           } else if (remappedInstType != null) {
             // If we have a remap inst type, do a cast

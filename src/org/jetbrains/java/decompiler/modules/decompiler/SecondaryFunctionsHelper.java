@@ -542,10 +542,14 @@ public final class SecondaryFunctionsHelper {
             return retexpr;
           }
         } else {
-          // Force boxing at statement level, wouldn't want a 3; just lying around
+          // Keep statement-level box/unbox calls explicit so the output remains a legal
+          // statement and preserves potential cast/null side effects.
           InvocationExprent invocationExprent = (InvocationExprent) exprent;
           if (invocationExprent.isBoxingCall()) {
             invocationExprent.forceBoxing(true);
+          }
+          if (invocationExprent.isUnboxingCall()) {
+            invocationExprent.forceUnboxing(true);
           }
         }
     }

@@ -1,0 +1,26 @@
+package pkg;
+
+super public class TestNarrowingAssignCast
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"()V"
+  stack 1 locals 1
+{
+  invokestatic Method pkg/TestNarrowingBase.produce:"()Lpkg/TestNarrowingBase;";
+  checkcast pkg/TestNarrowingDerived;
+  astore_0;
+  aload_0;
+  invokevirtual Method pkg/TestNarrowingDerived.ping:"()V";
+  return;
+}
+
+} // end Class TestNarrowingAssignCast

@@ -1,0 +1,25 @@
+package pkg;
+
+super public class TestStatementLevelUnboxingPop
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method consume:"(Ljava/lang/Object;)V"
+  stack 2 locals 1
+{
+  aload_0;
+  checkcast java/lang/Integer;
+  invokevirtual Method java/lang/Integer.intValue:"()I";
+  pop;
+  return;
+}
+
+} // end Class TestStatementLevelUnboxingPop
