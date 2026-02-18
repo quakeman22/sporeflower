@@ -1,0 +1,66 @@
+package pkg;
+
+/**
+ * Reproducer for parameter-slot reuse from String to object array where array
+ * elements are used for direct field and method access.
+ */
+super public class TestParamSlotReuseArrayElementMemberAccess
+  version 49:0
+{
+
+public Field field_2:"I";
+
+public Method "<init>":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  bipush 7;
+  putfield Field field_2:"I";
+  return;
+}
+
+public Method method_0:"(I)I"
+  stack 2 locals 2
+{
+  aload_0;
+  getfield Field field_2:"I";
+  iload_1;
+  iadd;
+  ireturn;
+}
+
+public Method test:"(Ljava/lang/String;I)I"
+  stack 6 locals 3
+{
+  aload_1;
+  invokevirtual Method java/lang/String.length:"()I";
+  pop;
+
+  aload_0;
+  iconst_1;
+  anewarray class pkg/TestParamSlotReuseArrayElementMemberAccess;
+  dup;
+  iconst_0;
+  new class pkg/TestParamSlotReuseArrayElementMemberAccess;
+  dup;
+  invokespecial Method "<init>":"()V";
+  aastore;
+  astore_1;
+  astore_0;
+
+  aload_1;
+  iload_2;
+  aaload;
+  getfield Field field_2:"I";
+  aload_1;
+  iload_2;
+  aaload;
+  iload_2;
+  invokevirtual Method method_0:"(I)I";
+  iadd;
+  ireturn;
+}
+
+} // end Class TestParamSlotReuseArrayElementMemberAccess

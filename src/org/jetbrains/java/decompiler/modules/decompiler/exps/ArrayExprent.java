@@ -186,6 +186,12 @@ public class ArrayExprent extends Exprent {
     for (VarType paramType : descriptor.params) {
       // If this expression points at a non-array method parameter slot, force a cast so we don't emit `param[idx]`.
       if (slot == resolvedIndex) {
+        // Do not force the cast for locals that merely reuse a parameter slot.
+        // Those variables have already been split out and should keep their inferred array type.
+        if (!method.varproc.getParams().contains(varExpr.getVarVersionPair())) {
+          return false;
+        }
+
         return paramType.arrayDim == 0;
       }
       slot += paramType.stackSize;
