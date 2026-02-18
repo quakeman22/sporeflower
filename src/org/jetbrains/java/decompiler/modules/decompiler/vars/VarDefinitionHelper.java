@@ -964,7 +964,27 @@ public class VarDefinitionHelper {
       return false;
     }
 
+    if (hasConflictingConcretePrimitiveTypes(fromType, toType)) {
+      return false;
+    }
+
     return isLatticeCompatible(mergedType, fromType) && isLatticeCompatible(mergedType, toType);
+  }
+
+  private static boolean hasConflictingConcretePrimitiveTypes(VarType first, VarType second) {
+    if (first == null || second == null) {
+      return false;
+    }
+
+    if (first.type == CodeType.UNKNOWN || second.type == CodeType.UNKNOWN) {
+      return false;
+    }
+
+    if (first.typeFamily == TypeFamily.OBJECT || second.typeFamily == TypeFamily.OBJECT) {
+      return false;
+    }
+
+    return first.type != second.type;
   }
 
   private static boolean sameOrUnknownTypeFamily(VarType first, VarType second) {
