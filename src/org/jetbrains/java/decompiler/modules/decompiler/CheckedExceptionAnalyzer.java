@@ -99,7 +99,13 @@ public final class CheckedExceptionAnalyzer {
       }
 
       LinkedHashSet<String> escaping = new LinkedHashSet<>();
+      LinkedHashSet<String> callsiteCaughtTypes = collectSameClassCallsiteCaughtTypes(ownerClass, ownerWrapper, method);
       collectEscapingCheckedExceptions(methodWrapper.root.getFirst(), ownerClass, ownerWrapper, Collections.emptyList(), escaping);
+      LinkedHashSet<String> bodyInferred = new LinkedHashSet<>(escaping);
+      augmentInferredExceptionsFromSameClassCallSites(method, methodWrapper, callsiteCaughtTypes, escaping);
+      if (method.hasModifier(CodeConstants.ACC_PRIVATE)) {
+        filterPrivateMethodInferredExceptionsByCallsiteCatches(escaping, bodyInferred, callsiteCaughtTypes);
+      }
       List<String> inferred = new ArrayList<>(escaping);
       inferredCheckedExceptions.put(methodKey, inferred);
       return inferred;
@@ -110,27 +116,83 @@ public final class CheckedExceptionAnalyzer {
   }
 
   public boolean canStatementThrow(Statement statement, String exceptionType) {
-    List<Exprent> exprents = new ArrayList<>();
-    collectExprents(statement, exprents);
+    return canStatementThrow(statement, exceptionType, Collections.emptyList());
+  }
 
-    for (Exprent exprent : exprents) {
-      for (Exprent nested : exprent.getAllExprents(true, true)) {
-        if (nested instanceof InvocationExprent invocation && invocationThrows(invocation, exceptionType)) {
+  private boolean canStatementThrow(Statement statement, String exceptionType, List<String> activeCatchTypes) {
+    if (statement == null) {
+      return false;
+    }
+
+    if (statement instanceof CatchStatement catchStatement) {
+      List<String> localCatchTypes = new ArrayList<>();
+      for (List<String> catchTypes : catchStatement.getExctStrings()) {
+        localCatchTypes.addAll(catchTypes);
+      }
+      List<String> tryCatchTypes = new ArrayList<>(activeCatchTypes);
+      tryCatchTypes.addAll(localCatchTypes);
+
+      if (canExprentsThrow(catchStatement.getResources(), exceptionType, tryCatchTypes)) {
+        return true;
+      }
+      if (canStatementThrow(catchStatement.getFirst(), exceptionType, tryCatchTypes)) {
+        return true;
+      }
+      for (int i = 1; i < catchStatement.getStats().size(); i++) {
+        if (canStatementThrow(catchStatement.getStats().get(i), exceptionType, activeCatchTypes)) {
           return true;
         }
+      }
+      return false;
+    }
 
-        if (nested instanceof ExitExprent exit && exit.getExitType() == ExitExprent.Type.THROW) {
+    if (statement instanceof CatchAllStatement catchAllStatement) {
+      List<String> tryCatchTypes = activeCatchTypes;
+      if (!catchAllStatement.isFinally()) {
+        tryCatchTypes = new ArrayList<>(activeCatchTypes);
+        tryCatchTypes.add("java/lang/Throwable");
+      }
+      if (canStatementThrow(catchAllStatement.getFirst(), exceptionType, tryCatchTypes)) {
+        return true;
+      }
+      return canStatementThrow(catchAllStatement.getHandler(), exceptionType, activeCatchTypes);
+    }
+
+    List<Exprent> exprents = statement.getExprents() != null ? statement.getExprents() : statement.getStatExprents();
+    if (canExprentsThrow(exprents, exceptionType, activeCatchTypes)) {
+      return true;
+    }
+
+    for (Statement child : statement.getStats()) {
+      if (canStatementThrow(child, exceptionType, activeCatchTypes)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private boolean canExprentsThrow(List<Exprent> exprents, String exceptionType, List<String> activeCatchTypes) {
+    for (Exprent exprent : exprents) {
+      for (Exprent nested : exprent.getAllExprents(true, true)) {
+        if (nested instanceof InvocationExprent invocation) {
+          if (invocationThrows(invocation, exceptionType) && !isCaughtByActiveCatches(exceptionType, activeCatchTypes)) {
+            return true;
+          }
+        }
+        else if (nested instanceof ExitExprent exit && exit.getExitType() == ExitExprent.Type.THROW) {
           Exprent value = exit.getValue();
           if (value != null) {
             VarType thrownType = value.getExprType();
             if (thrownType.type == CodeType.OBJECT && thrownType.value != null && isSubtypeOf(thrownType.value, exceptionType)) {
-              return true;
+              if (!isCaughtByActiveCatches(thrownType.value, activeCatchTypes)) {
+                return true;
+              }
             }
           }
         }
       }
     }
-
     return false;
   }
 
@@ -213,6 +275,156 @@ public final class CheckedExceptionAnalyzer {
         }
       }
     }
+  }
+
+  private void augmentInferredExceptionsFromSameClassCallSites(
+    StructMethod targetMethod,
+    MethodWrapper targetWrapper,
+    Set<String> callsiteCaughtTypes,
+    LinkedHashSet<String> escapingExceptions
+  ) {
+    // Restrict callsite-based augmentation to private methods to avoid widening
+    // externally visible or overriding signatures.
+    if (!targetMethod.hasModifier(CodeConstants.ACC_PRIVATE)) {
+      return;
+    }
+
+    if (targetWrapper.root == null || callsiteCaughtTypes.isEmpty()) {
+      return;
+    }
+
+    for (String catchType : callsiteCaughtTypes) {
+      if (!isCheckedExceptionType(catchType)) {
+        continue;
+      }
+      if (canStatementThrow(targetWrapper.root.getFirst(), catchType)) {
+        escapingExceptions.add(catchType);
+      }
+    }
+  }
+
+  private static void filterPrivateMethodInferredExceptionsByCallsiteCatches(
+    LinkedHashSet<String> inferredExceptions,
+    Set<String> bodyInferredExceptions,
+    Set<String> callsiteCaughtTypes
+  ) {
+    if (bodyInferredExceptions.isEmpty() && callsiteCaughtTypes.isEmpty()) {
+      inferredExceptions.clear();
+      return;
+    }
+
+    if (callsiteCaughtTypes.isEmpty()) {
+      inferredExceptions.removeIf(exceptionType -> !bodyInferredExceptions.contains(exceptionType));
+      return;
+    }
+
+    inferredExceptions.removeIf(exceptionType ->
+      !bodyInferredExceptions.contains(exceptionType)
+        && !isCoveredByCallsiteCatch(exceptionType, callsiteCaughtTypes)
+    );
+  }
+
+  private static boolean isCoveredByCallsiteCatch(String exceptionType, Set<String> callsiteCaughtTypes) {
+    for (String catchType : callsiteCaughtTypes) {
+      if (isSubtypeOf(exceptionType, catchType)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private LinkedHashSet<String> collectSameClassCallsiteCaughtTypes(
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    StructMethod targetMethod
+  ) {
+    LinkedHashSet<String> callsiteCaughtTypes = new LinkedHashSet<>();
+    for (MethodWrapper callerWrapper : ownerWrapper.getMethods()) {
+      if (callerWrapper.root == null) {
+        continue;
+      }
+      collectCallsiteCaughtTypes(
+        callerWrapper.root.getFirst(),
+        ownerClass,
+        targetMethod,
+        Collections.emptyList(),
+        callsiteCaughtTypes
+      );
+    }
+    return callsiteCaughtTypes;
+  }
+
+  private void collectCallsiteCaughtTypes(
+    Statement statement,
+    StructClass ownerClass,
+    StructMethod targetMethod,
+    List<String> activeCatchTypes,
+    LinkedHashSet<String> caughtTypes
+  ) {
+    if (statement == null) {
+      return;
+    }
+
+    if (statement instanceof CatchStatement catchStatement) {
+      List<String> localCatchTypes = new ArrayList<>();
+      for (List<String> catchTypes : catchStatement.getExctStrings()) {
+        localCatchTypes.addAll(catchTypes);
+      }
+      List<String> tryCatchTypes = new ArrayList<>(activeCatchTypes);
+      tryCatchTypes.addAll(localCatchTypes);
+
+      collectCallsiteCaughtTypesFromExprents(catchStatement.getResources(), ownerClass, targetMethod, tryCatchTypes, caughtTypes);
+      collectCallsiteCaughtTypes(catchStatement.getFirst(), ownerClass, targetMethod, tryCatchTypes, caughtTypes);
+      for (int i = 1; i < catchStatement.getStats().size(); i++) {
+        collectCallsiteCaughtTypes(catchStatement.getStats().get(i), ownerClass, targetMethod, activeCatchTypes, caughtTypes);
+      }
+      return;
+    }
+
+    if (statement instanceof CatchAllStatement catchAllStatement) {
+      // Catch-all handlers are too broad for checked-throws inference and can easily over-approximate.
+      collectCallsiteCaughtTypes(catchAllStatement.getFirst(), ownerClass, targetMethod, activeCatchTypes, caughtTypes);
+      collectCallsiteCaughtTypes(catchAllStatement.getHandler(), ownerClass, targetMethod, activeCatchTypes, caughtTypes);
+      return;
+    }
+
+    if (statement.getExprents() != null) {
+      collectCallsiteCaughtTypesFromExprents(statement.getExprents(), ownerClass, targetMethod, activeCatchTypes, caughtTypes);
+    } else {
+      collectCallsiteCaughtTypesFromExprents(statement.getStatExprents(), ownerClass, targetMethod, activeCatchTypes, caughtTypes);
+    }
+
+    for (Statement child : statement.getStats()) {
+      collectCallsiteCaughtTypes(child, ownerClass, targetMethod, activeCatchTypes, caughtTypes);
+    }
+  }
+
+  private static void collectCallsiteCaughtTypesFromExprents(
+    List<Exprent> exprents,
+    StructClass ownerClass,
+    StructMethod targetMethod,
+    List<String> activeCatchTypes,
+    LinkedHashSet<String> caughtTypes
+  ) {
+    for (Exprent exprent : exprents) {
+      for (Exprent nested : exprent.getAllExprents(true, true)) {
+        if (nested instanceof InvocationExprent invocation && isSameClassInvocation(invocation, ownerClass, targetMethod)) {
+          for (String catchType : activeCatchTypes) {
+            caughtTypes.add(catchType);
+          }
+        }
+      }
+    }
+  }
+
+  private static boolean isSameClassInvocation(InvocationExprent invocation, StructClass ownerClass, StructMethod targetMethod) {
+    if (!targetMethod.getName().equals(invocation.getName())
+      || !targetMethod.getDescriptor().equals(invocation.getStringDescriptor())) {
+      return false;
+    }
+
+    String invocationClass = invocation.getClassname();
+    return invocationClass != null && invocationClass.equals(ownerClass.qualifiedName);
   }
 
   private List<String> getInvocationCheckedExceptions(InvocationExprent invocation, StructClass ownerClass, ClassWrapper ownerWrapper) {
@@ -510,18 +722,6 @@ public final class CheckedExceptionAnalyzer {
     }
     catch (ReflectiveOperationException ignored) {
       return false;
-    }
-  }
-
-  private static void collectExprents(Statement stat, List<Exprent> out) {
-    if (stat.getExprents() != null) {
-      out.addAll(stat.getExprents());
-      return;
-    }
-
-    out.addAll(stat.getStatExprents());
-    for (Statement child : stat.getStats()) {
-      collectExprents(child, out);
     }
   }
 

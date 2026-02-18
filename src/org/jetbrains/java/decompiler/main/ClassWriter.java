@@ -1442,7 +1442,7 @@ public class ClassWriter implements StatementWriter {
             renderedThrows.add(new VarType(attr.getExcClassname(i, cl.getPool()), true));
           }
         }
-        else if (mt.containsCode() && methodWrapper.root != null) {
+        else if (mt.containsCode() && methodWrapper.root != null && shouldInferMissingThrows(mt)) {
           for (String inferred : checkedExceptionAnalyzer.inferMissingCheckedExceptions(cl, wrapper, mt, methodWrapper)) {
             renderedThrows.add(new VarType(inferred, true));
           }
@@ -2182,5 +2182,12 @@ public class ClassWriter implements StatementWriter {
         buffer.append(',').appendLineSeparator();
       }
     }
+  }
+
+  private static boolean shouldInferMissingThrows(StructMethod method) {
+    if (CodeConstants.INIT_NAME.equals(method.getName())) {
+      return true;
+    }
+    return method.hasModifier(CodeConstants.ACC_PRIVATE) || method.hasModifier(CodeConstants.ACC_STATIC);
   }
 }

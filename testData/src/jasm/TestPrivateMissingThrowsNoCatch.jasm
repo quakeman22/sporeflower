@@ -1,0 +1,32 @@
+package pkg;
+
+super public class TestPrivateMissingThrowsNoCatch
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private static Method helper:"()I"
+  stack 1 locals 0
+{
+  getstatic Field in:"Ljava/io/InputStream;";
+  invokevirtual Method java/io/InputStream.read:"()I";
+  ireturn;
+}
+
+public static Method test:"()I"
+  stack 1 locals 0
+{
+  invokestatic Method helper:"()I";
+  ireturn;
+}
+
+} // end Class TestPrivateMissingThrowsNoCatch

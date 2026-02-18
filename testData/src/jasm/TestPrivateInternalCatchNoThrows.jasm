@@ -1,0 +1,62 @@
+package pkg;
+
+super public class TestPrivateInternalCatchNoThrows extends java/lang/Thread
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Thread."<init>":"()V";
+  return;
+}
+
+private Method helper:"()I"
+  stack 1 locals 2
+{
+  goto L0;
+  catch t0 java/lang/Exception;
+    stack_frame_type stack1;
+    stack_map class java/lang/Exception;
+    astore_1;
+    iconst_m1;
+    ireturn;
+L0:
+  try t0;
+    getstatic Field in:"Ljava/io/InputStream;";
+    invokevirtual Method java/io/InputStream.read:"()I";
+    ireturn;
+  endtry t0;
+}
+
+public Method callerCaught:"()I"
+  stack 1 locals 2
+{
+  goto L1;
+  catch t1 java/lang/Exception;
+    stack_frame_type stack1;
+    stack_map class java/lang/Exception;
+    astore_1;
+    iconst_m1;
+    ireturn;
+L1:
+  try t1;
+    aload_0;
+    invokespecial Method helper:"()I";
+    ireturn;
+  endtry t1;
+}
+
+public Method "run":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  invokespecial Method helper:"()I";
+  pop;
+  return;
+}
+
+} // end Class TestPrivateInternalCatchNoThrows

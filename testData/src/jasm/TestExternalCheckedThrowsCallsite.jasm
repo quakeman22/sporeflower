@@ -1,0 +1,51 @@
+package pkg;
+
+super public class TestExternalCheckedThrowsCallsite
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private static Method load:"(Ljava/lang/String;)Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  aload_0;
+  invokestatic Method pkg/ExternalApi.create:"(Ljava/lang/String;)Ljava/lang/Object;";
+  areturn;
+}
+
+public static Method pair:"(Ljava/lang/String;Ljava/lang/String;)[Ljava/lang/Object;"
+  stack 4 locals 3
+{
+  goto L0;
+  catch t0 java/io/IOException;
+    stack_frame_type stack1;
+    stack_map class java/io/IOException;
+    astore_2;
+    aconst_null;
+    areturn;
+L0:
+  try t0;
+    iconst_2;
+    anewarray class java/lang/Object;
+    dup;
+    iconst_0;
+    aload_0;
+    invokestatic Method load:"(Ljava/lang/String;)Ljava/lang/Object;";
+    aastore;
+    dup;
+    iconst_1;
+    aload_1;
+    invokestatic Method load:"(Ljava/lang/String;)Ljava/lang/Object;";
+    aastore;
+    areturn;
+  endtry t0;
+}
+
+} // end Class TestExternalCheckedThrowsCallsite
