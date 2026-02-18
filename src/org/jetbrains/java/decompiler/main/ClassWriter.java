@@ -18,9 +18,11 @@ import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
+import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.Statements;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
@@ -883,8 +885,10 @@ public class ClassWriter implements StatementWriter {
 
     buffer.appendIndent(indent);
 
+    int renderedFieldFlags = getRenderedFieldAccessFlags(wrapper, cl, fd);
+
     if (!isEnum) {
-      appendModifiers(buffer, fd.getAccessFlags(), FIELD_ALLOWED, isInterface, FIELD_EXCLUDED);
+      appendModifiers(buffer, renderedFieldFlags, FIELD_ALLOWED, isInterface, FIELD_EXCLUDED);
     }
 
     Map.Entry<VarType, GenericFieldDescriptor> fieldTypeData = getFieldTypeData(fd);
@@ -932,7 +936,7 @@ public class ClassWriter implements StatementWriter {
         ExprProcessor.getCastedExprent(initializer, descriptor == null ? fieldType : descriptor.type, buffer, indent, false);
       }
     }
-    else if (fd.hasModifier(CodeConstants.ACC_FINAL) && fd.hasModifier(CodeConstants.ACC_STATIC)) {
+    else if ((renderedFieldFlags & CodeConstants.ACC_FINAL) != 0 && (renderedFieldFlags & CodeConstants.ACC_STATIC) != 0) {
       StructConstantValueAttribute attr = fd.getAttribute(StructGeneralAttribute.ATTRIBUTE_CONSTANT_VALUE);
       if (attr != null) {
         PrimitiveConstant constant = cl.getPool().getPrimitiveConstant(attr.getIndex());
@@ -945,6 +949,149 @@ public class ClassWriter implements StatementWriter {
       buffer.append(";").appendLineSeparator();
     }
   }
+
+  private static int getRenderedFieldAccessFlags(ClassWrapper wrapper, StructClass cl, StructField fd) {
+    int flags = fd.getAccessFlags();
+    if ((flags & CodeConstants.ACC_FINAL) == 0 || (flags & CodeConstants.ACC_STATIC) != 0) {
+      return flags;
+    }
+
+    String fieldKey = InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor());
+    if (wrapper.getDynamicFieldInitializers().containsKey(fieldKey)) {
+      return flags;
+    }
+
+    if (!isFinalFieldDefinitelyAssignedInConstructors(wrapper, cl, fd)) {
+      flags &= ~CodeConstants.ACC_FINAL;
+    }
+
+    return flags;
+  }
+
+  private static boolean isFinalFieldDefinitelyAssignedInConstructors(ClassWrapper wrapper, StructClass cl, StructField fd) {
+    Map<String, ConstructorFieldInitInfo> constructorInfo = new HashMap<>();
+
+    for (MethodWrapper methodWrapper : wrapper.getMethods()) {
+      StructMethod method = methodWrapper.methodStruct;
+      if (!CodeConstants.INIT_NAME.equals(method.getName()) || !method.containsCode()) {
+        continue;
+      }
+
+      ConstructorFieldInitInfo info = analyzeConstructorFieldInitialization(methodWrapper, wrapper, cl, fd);
+      if (info == null) {
+        return false;
+      }
+
+      constructorInfo.put(InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor()), info);
+    }
+
+    if (constructorInfo.isEmpty()) {
+      return false;
+    }
+
+    for (String constructorKey : constructorInfo.keySet()) {
+      if (!constructorDefinitelyInitializesField(constructorKey, constructorInfo, new HashSet<>())) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private static ConstructorFieldInitInfo analyzeConstructorFieldInitialization(
+    MethodWrapper methodWrapper,
+    ClassWrapper wrapper,
+    StructClass cl,
+    StructField fd
+  ) {
+    if (methodWrapper.root == null) {
+      return null;
+    }
+
+    boolean assignsField = constructorAssignsFieldDirectly(methodWrapper, cl, fd);
+    String delegatedCtorKey = getDelegatedThisConstructorKey(methodWrapper, wrapper, cl);
+    return new ConstructorFieldInitInfo(assignsField, delegatedCtorKey);
+  }
+
+  private static boolean constructorAssignsFieldDirectly(MethodWrapper methodWrapper, StructClass cl, StructField fd) {
+    if (methodWrapper.root == null) {
+      return false;
+    }
+
+    DirectGraph graph = methodWrapper.getOrBuildGraph();
+    if (graph == null) {
+      return false;
+    }
+
+    final boolean[] found = {false};
+    graph.iterateExprentsDeep(exprent -> {
+      if (exprent instanceof AssignmentExprent assignment && isConstructorFieldAssignment(assignment, cl, fd)) {
+        found[0] = true;
+        return 1;
+      }
+      return 0;
+    });
+
+    return found[0];
+  }
+
+  private static boolean isConstructorFieldAssignment(AssignmentExprent assignment, StructClass cl, StructField fd) {
+    if (!(assignment.getLeft() instanceof FieldExprent fieldExprent)) {
+      return false;
+    }
+
+    return !fieldExprent.isStatic()
+      && cl.qualifiedName.equals(fieldExprent.getClassname())
+      && fd.getName().equals(fieldExprent.getName())
+      && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString);
+  }
+
+  private static String getDelegatedThisConstructorKey(MethodWrapper methodWrapper, ClassWrapper wrapper, StructClass cl) {
+    Statement firstData = Statements.findFirstData(methodWrapper.root);
+    if (firstData == null || firstData.getExprents() == null || firstData.getExprents().isEmpty()) {
+      return null;
+    }
+
+    Exprent first = firstData.getExprents().get(0);
+    if (!(first instanceof InvocationExprent invocation)
+      || !Statements.isInvocationInitConstructor(invocation, methodWrapper, wrapper, true)
+      || !cl.qualifiedName.equals(invocation.getClassname())) {
+      return null;
+    }
+
+    return InterpreterUtil.makeUniqueKey(CodeConstants.INIT_NAME, invocation.getStringDescriptor());
+  }
+
+  private static boolean constructorDefinitelyInitializesField(
+    String constructorKey,
+    Map<String, ConstructorFieldInitInfo> constructorInfo,
+    Set<String> recursionGuard
+  ) {
+    ConstructorFieldInitInfo info = constructorInfo.get(constructorKey);
+    if (info == null) {
+      return false;
+    }
+
+    if (info.assignsField) {
+      return true;
+    }
+
+    if (info.delegatedThisConstructorKey == null) {
+      return false;
+    }
+
+    if (!recursionGuard.add(constructorKey)) {
+      return false;
+    }
+
+    try {
+      return constructorDefinitelyInitializesField(info.delegatedThisConstructorKey, constructorInfo, recursionGuard);
+    } finally {
+      recursionGuard.remove(constructorKey);
+    }
+  }
+
+  private record ConstructorFieldInitInfo(boolean assignsField, String delegatedThisConstructorKey) { }
 
   private static void methodLambdaToJava(ClassNode lambdaNode,
                                          ClassWrapper classWrapper,

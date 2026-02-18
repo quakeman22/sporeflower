@@ -1,0 +1,36 @@
+package pkg;
+
+super public class TestFinalFieldCtorGap
+  version 47:0
+{
+
+private final Field value:"Ljava/lang/Object;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method "<init>":"(Ljava/lang/Object;)V"
+  stack 2 locals 2
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  aload_1;
+  putfield Field value:"Ljava/lang/Object;";
+  return;
+}
+
+public Method get:"()Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"Ljava/lang/Object;";
+  areturn;
+}
+
+} // end Class TestFinalFieldCtorGap
