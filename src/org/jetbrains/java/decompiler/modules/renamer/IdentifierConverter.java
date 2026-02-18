@@ -18,6 +18,7 @@ import java.util.*;
 public class IdentifierConverter implements NewClassNameBuilder {
   private final StructContext context;
   private final IIdentifierRenamer helper;
+  private final ConverterHelper conflictFallbackRenamer = new ConverterHelper();
   private final PoolInterceptor interceptor;
   private List<ClassWrapperNode> rootClasses = new ArrayList<>();
   private List<ClassWrapperNode> rootInterfaces = new ArrayList<>();
@@ -35,6 +36,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
       renameAllClasses();
       renameInterfaces();
       renameClasses();
+      resolveFieldNameConflicts();
       context.reloadContext();
     }
     catch (IOException ex) {
@@ -172,44 +174,53 @@ public class IdentifierConverter implements NewClassNameBuilder {
       classNewFullName = classOldFullName;
     }
 
+    Map<String, String> inheritedNames = new LinkedHashMap<>(names);
+    Set<String> inheritedMethodNames = collectInheritedMethodNames(inheritedNames);
+
     // methods
-    HashSet<String> setMethodNames = new HashSet<>();
-    for (StructMethod md : cl.getMethods()) {
-      setMethodNames.add(md.getName());
-    }
-
     VBStyleCollection<StructMethod, String> methods = cl.getMethods();
-    for (int i = 0; i < methods.size(); i++) {
-
-      StructMethod mt = methods.get(i);
-      String key = methods.getKey(i);
-
+    Set<String> assignedMethodNames = new HashSet<>();
+    for (int index : buildMethodProcessingOrder(methods, inheritedNames)) {
+      StructMethod mt = methods.get(index);
+      String key = methods.getKey(index);
       boolean isPrivate = mt.hasModifier(CodeConstants.ACC_PRIVATE);
 
-      String name = mt.getName();
+      String oldName = mt.getName();
+      if (CodeConstants.INIT_NAME.equals(oldName) || CodeConstants.CLINIT_NAME.equals(oldName)) {
+        if (!isPrivate) {
+          names.put(key, oldName);
+        }
+        assignedMethodNames.add(oldName);
+        continue;
+      }
+
       if (!cl.isOwn() || mt.hasModifier(CodeConstants.ACC_NATIVE)) {
         // external and native methods must not be renamed
         if (!isPrivate) {
-          names.put(key, name);
+          names.put(key, oldName);
         }
+        assignedMethodNames.add(oldName);
+        continue;
       }
-      else if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, name, mt.getDescriptor())) {
-        if (isPrivate || !names.containsKey(key)) {
-          do {
-            name = helper.getNextMethodName(classOldFullName, name, mt.getDescriptor());
-          }
-          while (setMethodNames.contains(name));
 
-          if (!isPrivate) {
-            names.put(key, name);
-          }
-        }
-        else {
-          name = names.get(key);
-        }
+      String inheritedName = isPrivate ? null : inheritedNames.get(key);
+      boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, oldName, mt.getDescriptor());
+      String newName = inheritedName != null ? inheritedName : oldName;
 
-        interceptor.addName(classOldFullName + " " + mt.getName() + " " + mt.getDescriptor(),
-                            classNewFullName + " " + name + " " + buildNewDescriptor(false, mt.getDescriptor()));
+      while (renameByPolicy || hasMethodNameConflict(newName, assignedMethodNames, inheritedMethodNames, inheritedName)) {
+        newName = nextMethodName(classOldFullName, mt, renameByPolicy, assignedMethodNames, inheritedMethodNames, inheritedName);
+        renameByPolicy = false;
+      }
+
+      assignedMethodNames.add(newName);
+
+      if (!isPrivate) {
+        names.put(key, newName);
+      }
+
+      if (!newName.equals(oldName)) {
+        interceptor.addName(classOldFullName + " " + oldName + " " + mt.getDescriptor(),
+                            classNewFullName + " " + newName + " " + buildNewDescriptor(false, mt.getDescriptor()));
       }
     }
 
@@ -219,29 +230,21 @@ public class IdentifierConverter implements NewClassNameBuilder {
     }
 
     // fields
-    // FIXME: should overloaded fields become the same name?
     HashSet<String> occupiedFieldNames = new HashSet<>();
-    Set<StructField> renamedFields = new HashSet<>();
     for (StructField fd : cl.getFields()) {
-      if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, classOldFullName, fd.getName(), fd.getDescriptor())) {
-        renamedFields.add(fd);
+      String oldName = fd.getName();
+      boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, classOldFullName, oldName, fd.getDescriptor());
+      String newName = oldName;
+
+      while (renameByPolicy || occupiedFieldNames.contains(newName)) {
+        newName = nextFieldName(classOldFullName, fd, renameByPolicy, occupiedFieldNames);
+        renameByPolicy = false;
       }
-      else {
-        occupiedFieldNames.add(fd.getName());
-      }
-    }
 
-    for (StructField fd : cl.getFields()) {
-      if (renamedFields.contains(fd)) {
-        String newName;
-        do {
-          newName = helper.getNextFieldName(classOldFullName, fd.getName(), fd.getDescriptor());
-        }
-        while (occupiedFieldNames.contains(newName));
+      occupiedFieldNames.add(newName);
 
-        occupiedFieldNames.add(newName);
-
-        interceptor.addName(classOldFullName + " " + fd.getName() + " " + fd.getDescriptor(),
+      if (!newName.equals(oldName)) {
+        interceptor.addName(classOldFullName + " " + oldName + " " + fd.getDescriptor(),
                             classNewFullName + " " + newName + " " + buildNewDescriptor(true, fd.getDescriptor()));
       }
     }
@@ -261,6 +264,248 @@ public class IdentifierConverter implements NewClassNameBuilder {
       newDescriptor = MethodDescriptor.parseDescriptor(descriptor).buildNewDescriptor(this);
     }
     return newDescriptor != null ? newDescriptor : descriptor;
+  }
+
+  private static List<Integer> buildMethodProcessingOrder(VBStyleCollection<StructMethod, String> methods, Map<String, String> inheritedNames) {
+    List<Integer> inherited = new ArrayList<>();
+    List<Integer> own = new ArrayList<>();
+
+    for (int i = 0; i < methods.size(); i++) {
+      StructMethod method = methods.get(i);
+      boolean hasInheritedName = !method.hasModifier(CodeConstants.ACC_PRIVATE) && inheritedNames.containsKey(methods.getKey(i));
+      if (hasInheritedName) {
+        inherited.add(i);
+      }
+      else {
+        own.add(i);
+      }
+    }
+
+    inherited.addAll(own);
+    return inherited;
+  }
+
+  private static Set<String> collectInheritedMethodNames(Map<String, String> inheritedNames) {
+    return new HashSet<>(inheritedNames.values());
+  }
+
+  private String nextMethodName(
+    String className,
+    StructMethod method,
+    boolean useHelper,
+    Set<String> assignedMethodNames,
+    Set<String> inheritedMethodNames,
+    String inheritedName
+  ) {
+    Set<String> attempts = new HashSet<>();
+    boolean usePolicyRenamer = useHelper;
+
+    while (true) {
+      String candidate = generateMethodNameCandidate(className, method, usePolicyRenamer);
+      if (!hasMethodNameConflict(candidate, assignedMethodNames, inheritedMethodNames, inheritedName)) {
+        return candidate;
+      }
+
+      if (!attempts.add((usePolicyRenamer ? "helper:" : "fallback:") + candidate)) {
+        usePolicyRenamer = false;
+      }
+    }
+  }
+
+  private String nextFieldName(String className, StructField field, boolean useHelper, Set<String> occupiedFieldNames) {
+    Set<String> attempts = new HashSet<>();
+    boolean usePolicyRenamer = useHelper;
+
+    while (true) {
+      String candidate = generateFieldNameCandidate(className, field, usePolicyRenamer);
+      if (!occupiedFieldNames.contains(candidate)) {
+        return candidate;
+      }
+
+      if (!attempts.add((usePolicyRenamer ? "helper:" : "fallback:") + candidate)) {
+        usePolicyRenamer = false;
+      }
+    }
+  }
+
+  private String generateMethodNameCandidate(String className, StructMethod method, boolean useHelper) {
+    String candidate = useHelper
+      ? helper.getNextMethodName(className, method.getName(), method.getDescriptor())
+      : conflictFallbackRenamer.getNextMethodName(className, method.getName(), method.getDescriptor());
+    if (candidate == null || candidate.isEmpty()) {
+      return conflictFallbackRenamer.getNextMethodName(className, method.getName(), method.getDescriptor());
+    }
+    return candidate;
+  }
+
+  private String generateFieldNameCandidate(String className, StructField field, boolean useHelper) {
+    String candidate = useHelper
+      ? helper.getNextFieldName(className, field.getName(), field.getDescriptor())
+      : conflictFallbackRenamer.getNextFieldName(className, field.getName(), field.getDescriptor());
+    if (candidate == null || candidate.isEmpty()) {
+      return conflictFallbackRenamer.getNextFieldName(className, field.getName(), field.getDescriptor());
+    }
+    return candidate;
+  }
+
+  private static boolean hasMethodNameConflict(
+    String candidateName,
+    Set<String> assignedMethodNames,
+    Set<String> inheritedMethodNames,
+    String inheritedName
+  ) {
+    if (assignedMethodNames.contains(candidateName)) {
+      return true;
+    }
+
+    if (!inheritedMethodNames.contains(candidateName)) {
+      return false;
+    }
+
+    if (inheritedName == null) {
+      return true;
+    }
+
+    return !candidateName.equals(inheritedName);
+  }
+
+  private void resolveFieldNameConflicts() {
+    Map<String, Set<String>> ownerOccupiedFieldNames = new HashMap<>();
+    for (StructClass cl : context.getOwnClasses()) {
+      resolveVisibleFieldConflicts(cl, ownerOccupiedFieldNames);
+    }
+  }
+
+  private void resolveVisibleFieldConflicts(StructClass cl, Map<String, Set<String>> ownerOccupiedFieldNames) {
+    Map<String, List<FieldReference>> fieldsByName = new LinkedHashMap<>();
+    collectVisibleFields(cl, new HashSet<>(), fieldsByName);
+
+    for (List<FieldReference> conflictingFields : fieldsByName.values()) {
+      if (conflictingFields.size() < 2) {
+        continue;
+      }
+
+      FieldReference keeper = chooseFieldConflictKeeper(conflictingFields);
+      Set<String> disallowedNames = new HashSet<>();
+      for (FieldReference ref : conflictingFields) {
+        disallowedNames.add(ref.currentName);
+      }
+
+      for (FieldReference ref : conflictingFields) {
+        if (ref == keeper || !ref.ownerClass.isOwn()) {
+          continue;
+        }
+        renameFieldReference(ref, disallowedNames, ownerOccupiedFieldNames);
+      }
+    }
+  }
+
+  private void collectVisibleFields(StructClass cl, Set<String> visited, Map<String, List<FieldReference>> fieldsByName) {
+    if (!visited.add(cl.qualifiedName)) {
+      return;
+    }
+
+    for (StructField field : cl.getFields()) {
+      String currentName = resolveCurrentFieldName(cl.qualifiedName, field);
+      fieldsByName.computeIfAbsent(currentName, key -> new ArrayList<>()).add(new FieldReference(cl, field, currentName));
+    }
+
+    if (cl.superClass != null) {
+      StructClass parent = context.getClass(cl.superClass.getString());
+      if (parent != null) {
+        collectVisibleFields(parent, visited, fieldsByName);
+      }
+    }
+
+    for (String ifName : cl.getInterfaceNames()) {
+      StructClass parent = context.getClass(ifName);
+      if (parent != null) {
+        collectVisibleFields(parent, visited, fieldsByName);
+      }
+    }
+  }
+
+  private static FieldReference chooseFieldConflictKeeper(List<FieldReference> conflictingFields) {
+    for (FieldReference ref : conflictingFields) {
+      if (!ref.ownerClass.hasModifier(CodeConstants.ACC_INTERFACE)) {
+        return ref;
+      }
+    }
+    return conflictingFields.get(0);
+  }
+
+  private void renameFieldReference(
+    FieldReference ref,
+    Set<String> disallowedNames,
+    Map<String, Set<String>> ownerOccupiedFieldNames
+  ) {
+    String owner = ref.ownerClass.qualifiedName;
+    Set<String> occupiedNames = ownerOccupiedFieldNames.computeIfAbsent(owner, key -> getOwnerOccupiedFieldNames(ref.ownerClass));
+
+    boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, owner, ref.field.getName(), ref.field.getDescriptor());
+    String newName = ref.currentName;
+    while (renameByPolicy || occupiedNames.contains(newName) || disallowedNames.contains(newName)) {
+      Set<String> blockedNames = new HashSet<>(occupiedNames);
+      blockedNames.addAll(disallowedNames);
+      newName = nextFieldName(owner, ref.field, renameByPolicy, blockedNames);
+      renameByPolicy = false;
+    }
+
+    if (newName.equals(ref.currentName)) {
+      return;
+    }
+
+    occupiedNames.add(newName);
+    disallowedNames.add(newName);
+    ref.currentName = newName;
+
+    String ownerNew = interceptor.getName(owner);
+    if (ownerNew == null) {
+      ownerNew = owner;
+    }
+
+    interceptor.addName(
+      buildFieldKey(owner, ref.field.getName(), ref.field.getDescriptor()),
+      ownerNew + " " + newName + " " + buildNewDescriptor(true, ref.field.getDescriptor())
+    );
+  }
+
+  private Set<String> getOwnerOccupiedFieldNames(StructClass ownerClass) {
+    Set<String> occupiedNames = new HashSet<>();
+    for (StructField field : ownerClass.getFields()) {
+      occupiedNames.add(resolveCurrentFieldName(ownerClass.qualifiedName, field));
+    }
+    return occupiedNames;
+  }
+
+  private String resolveCurrentFieldName(String owner, StructField field) {
+    String mapped = interceptor.getName(buildFieldKey(owner, field.getName(), field.getDescriptor()));
+    if (mapped == null) {
+      return field.getName();
+    }
+
+    String[] parts = mapped.split(" ", 3);
+    if (parts.length >= 2 && !parts[1].isEmpty()) {
+      return parts[1];
+    }
+
+    return field.getName();
+  }
+
+  private static String buildFieldKey(String owner, String name, String descriptor) {
+    return owner + " " + name + " " + descriptor;
+  }
+
+  private static final class FieldReference {
+    private final StructClass ownerClass;
+    private final StructField field;
+    private String currentName;
+
+    private FieldReference(StructClass ownerClass, StructField field, String currentName) {
+      this.ownerClass = ownerClass;
+      this.field = field;
+      this.currentName = currentName;
+    }
   }
 
   private static List<ClassWrapperNode> getReversePostOrderListIterative(List<ClassWrapperNode> roots) {

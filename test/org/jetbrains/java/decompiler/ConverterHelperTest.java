@@ -28,12 +28,13 @@ public class ConverterHelperTest {
   @Test public void testEmptyMethodName() { doTestMethodName("", VALID_METHOD_DESCRIPTOR, true); }
 
   @Test public void testShortClassName() { doTestClassName("C", true); }
-  @Test public void testShortFieldName() { doTestFieldName("f", VALID_FIELD_DESCRIPTOR, true); }
-  @Test public void testShortMethodName() { doTestMethodName("m", VALID_METHOD_DESCRIPTOR, true); }
+  @Test public void testShortFieldName() { doTestFieldName("f", VALID_FIELD_DESCRIPTOR, false); }
+  @Test public void testShortMethodName() { doTestMethodName("m", VALID_METHOD_DESCRIPTOR, false); }
+  @Test public void testRunnableMethodName() { doTestMethodName("run", VALID_METHOD_DESCRIPTOR, false); }
 
   @Test public void testUnderscoreClassName() { doTestClassName("_", true); }
-  @Test public void testUnderscoreFieldName() { doTestFieldName("_", VALID_FIELD_DESCRIPTOR, true); }
-  @Test public void testUnderscoreMethodName() { doTestMethodName("_", VALID_METHOD_DESCRIPTOR, true); }
+  @Test public void testUnderscoreFieldName() { doTestFieldName("_", VALID_FIELD_DESCRIPTOR, false); }
+  @Test public void testUnderscoreMethodName() { doTestMethodName("_", VALID_METHOD_DESCRIPTOR, false); }
 
   @Test public void testKeywordClassName() { doTestClassName("public", true); }
   @Test public void testKeywordFieldName() { doTestFieldName("public", VALID_FIELD_DESCRIPTOR, true); }
