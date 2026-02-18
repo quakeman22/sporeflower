@@ -51,6 +51,37 @@ public class TestAnonymousInterfaceCapture {
     compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out"));
   }
 
+  @Test
+  public void testAnonymousSubclassKeepsOnlyRealSuperConstructorArgsWhenSyntheticMetadataMissing() throws IOException {
+    Path source = writeSource("pkg/TestAnonymousClassCtorArgs.java", """
+package pkg;
+
+public class TestAnonymousClassCtorArgs {
+  public Thread build(String name) {
+    return new Thread(name) {
+      @Override
+      public void run() {
+      }
+    };
+  }
+}
+""");
+
+    compileJava8NoDebug(source, outRoot());
+
+    Path anonymousClass = outRoot().resolve("pkg/TestAnonymousClassCtorArgs$1.class");
+    assertTrue(Files.isRegularFile(anonymousClass), "Missing anonymous class file: " + anonymousClass);
+    stripSyntheticFieldAccessFlags(anonymousClass);
+
+    String content = decompileDirectory(outRoot(), "pkg/TestAnonymousClassCtorArgs.java");
+    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertTrue(content.contains("new Thread(var1) {"), content);
+    assertFalse(content.contains("new Thread(this"), content);
+
+    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestAnonymousClassCtorArgs.java");
+    compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out-super-args"));
+  }
+
   private static void stripSyntheticFieldAccessFlags(Path classFile) throws IOException {
     byte[] bytes = Files.readAllBytes(classFile);
     ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);

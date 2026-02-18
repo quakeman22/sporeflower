@@ -479,14 +479,25 @@ public class NestedClassProcessor {
       for (Entry<String, List<VarFieldPair>> entry : enclosing.getValue().entrySet()) {
         mergeListSignatures(entry.getValue(), interPairMask, false);
 
+        MethodDescriptor constructorDescriptor = MethodDescriptor.parseDescriptor(entry.getKey());
         List<VarVersionPair> mask = new ArrayList<>(entry.getValue().size());
-        for (VarFieldPair pair : entry.getValue()) {
+        for (int parameterIndex = 0; parameterIndex < entry.getValue().size(); parameterIndex++) {
+          VarFieldPair pair = entry.getValue().get(parameterIndex);
+          boolean anonymousOuterThisCapture = isAnonymousOuterThisCaptureWithoutMetadata(nestedNode, constructorDescriptor, parameterIndex);
+
           // Keep only true synthetic captures in the constructor mask.
           // Real constructor arguments (e.g. superclass ctor args in anonymous classes)
           // must remain visible in source output.
-          boolean syntheticCtorParam = pair != null &&
-            (!pair.fieldKey.isEmpty() || isAnonymousInterfaceCaptureWithoutMetadata(nestedNode));
-          mask.add(syntheticCtorParam ? pair.varPair : null);
+          boolean syntheticCtorParam =
+            anonymousOuterThisCapture ||
+              pair != null &&
+                (!pair.fieldKey.isEmpty() || isAnonymousInterfaceCaptureWithoutMetadata(nestedNode));
+
+          if (syntheticCtorParam) {
+            mask.add(pair != null ? pair.varPair : anonymousOuterThisCapture ? new VarVersionPair(-1, 0) : null);
+          } else {
+            mask.add(null);
+          }
         }
         nestedNode.getWrapper().getMethodWrapper(CodeConstants.INIT_NAME, entry.getKey()).synthParameters = mask;
       }
@@ -887,6 +898,35 @@ public class NestedClassProcessor {
     return nestedNode.classStruct.superClass != null
       && "java/lang/Object".equals(nestedNode.classStruct.superClass.getString())
       && nestedNode.classStruct.getInterfaceNames().length > 0;
+  }
+
+  private static boolean isAnonymousOuterThisCaptureWithoutMetadata(ClassNode nestedNode, MethodDescriptor constructorDescriptor, int parameterIndex) {
+    if (parameterIndex != 0 || nestedNode.type != ClassNode.Type.ANONYMOUS || nestedNode.parent == null) {
+      return false;
+    }
+
+    if (constructorDescriptor.params.length == 0) {
+      return false;
+    }
+
+    VarType firstParameterType = constructorDescriptor.params[0];
+    if (firstParameterType.type != CodeType.OBJECT || firstParameterType.arrayDim != 0 || firstParameterType.value == null) {
+      return false;
+    }
+
+    if (!nestedNode.enclosingClasses.contains(firstParameterType.value) &&
+        !nestedNode.parent.classStruct.qualifiedName.equals(firstParameterType.value)) {
+      return false;
+    }
+
+    MethodWrapper enclosingMethod = findEnclosingMethod(nestedNode);
+    if (enclosingMethod != null && enclosingMethod.methodStruct.hasModifier(CodeConstants.ACC_STATIC)) {
+      return false;
+    }
+
+    String outerDescriptor = "L" + firstParameterType.value + ";";
+    return nestedNode.classStruct.getFields().stream()
+      .anyMatch(field -> !field.hasModifier(CodeConstants.ACC_STATIC) && outerDescriptor.equals(field.getDescriptor()));
   }
 
   private static void mergeListSignatures(List<VarFieldPair> first, List<VarFieldPair> second, boolean both) {
