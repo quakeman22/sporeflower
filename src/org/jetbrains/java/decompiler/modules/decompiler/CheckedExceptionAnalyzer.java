@@ -3,9 +3,11 @@ package org.jetbrains.java.decompiler.modules.decompiler;
 
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.main.ClassesProcessor;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
+import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ExitExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
@@ -51,6 +53,13 @@ public final class CheckedExceptionAnalyzer {
 
   public static Scope activate(CheckedExceptionAnalyzer analyzer) {
     return new Scope(analyzer);
+  }
+
+  public boolean shouldInferMissingThrows(StructClass ownerClass, StructMethod method) {
+    // Inference currently acts as a repair pass for missing/empty Exceptions metadata.
+    // Keep enabled globally; downstream filters (private-only callsite augmentation,
+    // override-compatibility checks, catch reachability checks) constrain output.
+    return true;
   }
 
   public CatchRewrite rewriteCatchTypes(Statement tryBody, List<String> exceptionTypes, List<String> previousCatchTypes) {
@@ -99,7 +108,9 @@ public final class CheckedExceptionAnalyzer {
       }
 
       LinkedHashSet<String> escaping = new LinkedHashSet<>();
-      LinkedHashSet<String> callsiteCaughtTypes = collectSameClassCallsiteCaughtTypes(ownerClass, ownerWrapper, method);
+      LinkedHashSet<String> callsiteCaughtTypes = method.hasModifier(CodeConstants.ACC_PRIVATE)
+        ? collectSameClassCallsiteCaughtTypes(ownerClass, ownerWrapper, method)
+        : new LinkedHashSet<>();
       collectEscapingCheckedExceptions(methodWrapper.root.getFirst(), ownerClass, ownerWrapper, Collections.emptyList(), escaping);
       LinkedHashSet<String> bodyInferred = new LinkedHashSet<>(escaping);
       augmentInferredExceptionsFromSameClassCallSites(method, methodWrapper, callsiteCaughtTypes, escaping);
@@ -107,6 +118,7 @@ public final class CheckedExceptionAnalyzer {
         filterPrivateMethodInferredExceptionsByCallsiteCatches(escaping, bodyInferred, callsiteCaughtTypes);
       }
       List<String> inferred = new ArrayList<>(escaping);
+      inferred = filterInferredExceptionsByOverrideCompatibility(ownerClass, method, inferred);
       inferredCheckedExceptions.put(methodKey, inferred);
       return inferred;
     }
@@ -297,10 +309,19 @@ public final class CheckedExceptionAnalyzer {
       if (!isCheckedExceptionType(catchType)) {
         continue;
       }
+      // Broad catch-all types are too imprecise for signature synthesis and tend to
+      // create cascading false positives on unresolved/library invocations.
+      if (isBroadCheckedCatchType(catchType)) {
+        continue;
+      }
       if (canStatementThrow(targetWrapper.root.getFirst(), catchType)) {
         escapingExceptions.add(catchType);
       }
     }
+  }
+
+  private static boolean isBroadCheckedCatchType(String catchType) {
+    return "java/lang/Exception".equals(catchType) || "java/lang/Throwable".equals(catchType);
   }
 
   private static void filterPrivateMethodInferredExceptionsByCallsiteCatches(
@@ -445,13 +466,15 @@ public final class CheckedExceptionAnalyzer {
         return declared;
       }
 
-      if (ownerClass != null
-        && ownerWrapper != null
-        && ownerClass.qualifiedName.equals(invokedClass.qualifiedName)
-        && invokedMethod.containsCode()) {
-        MethodWrapper invokedWrapper = ownerWrapper.getMethodWrapper(invokedMethod.getName(), invokedMethod.getDescriptor());
+      if (invokedClass.isOwn() && invokedMethod.containsCode()) {
+        // Cross-class inference for own classes is required when missing throws metadata
+        // exists on callees outside the current class (common in obfuscated jars).
+        ClassWrapper invokedClassWrapper = resolveClassWrapper(invokedClass, ownerClass, ownerWrapper);
+        MethodWrapper invokedWrapper = invokedClassWrapper == null
+          ? null
+          : invokedClassWrapper.getMethodWrapper(invokedMethod.getName(), invokedMethod.getDescriptor());
         if (invokedWrapper != null) {
-          return inferMissingCheckedExceptions(ownerClass, ownerWrapper, invokedMethod, invokedWrapper);
+          return inferMissingCheckedExceptions(invokedClass, invokedClassWrapper, invokedMethod, invokedWrapper);
         }
       }
 
@@ -467,6 +490,29 @@ public final class CheckedExceptionAnalyzer {
     }
 
     return Collections.emptyList();
+  }
+
+  private static @Nullable ClassWrapper resolveClassWrapper(StructClass invokedClass, StructClass ownerClass, ClassWrapper ownerWrapper) {
+    // Fast path for same-class calls: re-use wrapper already attached to current context.
+    if (ownerClass != null
+      && ownerWrapper != null
+      && ownerClass.qualifiedName.equals(invokedClass.qualifiedName)) {
+      return ownerWrapper;
+    }
+
+    // Cross-class path: resolve wrapper via root class map so we can recursively infer
+    // checked throws for other own classes in the same decompilation session.
+    ClassesProcessor processor = DecompilerContext.getClassProcessor();
+    if (processor == null) {
+      return null;
+    }
+
+    ClassesProcessor.ClassNode node = processor.getMapRootClasses().get(invokedClass.qualifiedName);
+    if (node == null) {
+      return null;
+    }
+
+    return node.getWrapper();
   }
 
   private boolean invocationThrows(InvocationExprent invocation, String exceptionType) {
@@ -541,9 +587,39 @@ public final class CheckedExceptionAnalyzer {
   }
 
   private static @Nullable StructMethod findMethod(StructClass cls, InvocationExprent invocation) {
-    StructMethod method = cls.getMethod(invocation.getName(), invocation.getStringDescriptor());
+    String invocationName = invocation.getName();
+    String descriptor = invocation.getStringDescriptor();
+
+    StructMethod method = cls.getMethod(invocationName, descriptor);
+    if (method != null) {
+      return method;
+    }
+
+    method = cls.getMethodRecursive(invocationName, descriptor);
+    if (method != null) {
+      return method;
+    }
+
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) {
+      return null;
+    }
+
+    String mapped = interceptor.getName(cls.qualifiedName + " " + invocationName + " " + descriptor);
+    if (mapped == null) {
+      return null;
+    }
+
+    int firstSpace = mapped.indexOf(' ');
+    int secondSpace = mapped.indexOf(' ', firstSpace + 1);
+    if (firstSpace <= 0 || secondSpace <= firstSpace) {
+      return null;
+    }
+
+    String renamedMethodName = mapped.substring(firstSpace + 1, secondSpace);
+    method = cls.getMethod(renamedMethodName, descriptor);
     if (method == null) {
-      method = cls.getMethodRecursive(invocation.getName(), invocation.getStringDescriptor());
+      method = cls.getMethodRecursive(renamedMethodName, descriptor);
     }
     return method;
   }
@@ -608,6 +684,158 @@ public final class CheckedExceptionAnalyzer {
       return false;
     }
     return simpleName.endsWith("Exception");
+  }
+
+  private List<String> filterInferredExceptionsByOverrideCompatibility(StructClass ownerClass, StructMethod method, List<String> inferredExceptions) {
+    // Never synthesize throws that would make an override signature illegal to compile.
+    // If a super declaration has no checked throws, inferred checked throws are dropped.
+    if (inferredExceptions.isEmpty()) {
+      return inferredExceptions;
+    }
+    if (CodeConstants.INIT_NAME.equals(method.getName())
+      || method.hasModifier(CodeConstants.ACC_PRIVATE)
+      || method.hasModifier(CodeConstants.ACC_STATIC)) {
+      return inferredExceptions;
+    }
+
+    List<List<String>> overriddenThrows = collectOverriddenMethodCheckedThrows(ownerClass, method);
+    if (overriddenThrows.isEmpty()) {
+      return inferredExceptions;
+    }
+
+    List<String> compatible = new ArrayList<>();
+    for (String inferred : inferredExceptions) {
+      boolean allowed = true;
+      for (List<String> declared : overriddenThrows) {
+        if (declared.isEmpty()) {
+          allowed = false;
+          break;
+        }
+
+        boolean coveredByDeclaration = false;
+        for (String declaredType : declared) {
+          if (isSubtypeOf(inferred, declaredType)) {
+            coveredByDeclaration = true;
+            break;
+          }
+        }
+        if (!coveredByDeclaration) {
+          allowed = false;
+          break;
+        }
+      }
+
+      if (allowed) {
+        compatible.add(inferred);
+      }
+    }
+
+    return compatible;
+  }
+
+  private List<List<String>> collectOverriddenMethodCheckedThrows(StructClass ownerClass, StructMethod method) {
+    List<List<String>> declarations = new ArrayList<>();
+    String originalName = getOriginalMethodName(ownerClass, method);
+    String descriptor = method.getDescriptor();
+    Set<String> visited = new HashSet<>();
+
+    if (ownerClass.superClass != null) {
+      collectOverriddenMethodCheckedThrows(ownerClass.superClass.getString(), originalName, descriptor, visited, declarations);
+    }
+    for (String ifaceName : ownerClass.getInterfaceNames()) {
+      collectOverriddenMethodCheckedThrows(ifaceName, originalName, descriptor, visited, declarations);
+    }
+
+    return declarations;
+  }
+
+  private void collectOverriddenMethodCheckedThrows(
+    String className,
+    String originalMethodName,
+    String descriptor,
+    Set<String> visited,
+    List<List<String>> declarations
+  ) {
+    if (className == null || !visited.add(className)) {
+      return;
+    }
+
+    StructClass cls = DecompilerContext.getStructContext().getClass(className);
+    if (cls == null) {
+      if (className.startsWith("java/")) {
+        List<String> reflected = reflectionMethodCheckedExceptions(className, originalMethodName, descriptor);
+        if (reflected != null) {
+          declarations.add(reflected);
+        }
+      }
+      return;
+    }
+
+    StructMethod declaredMethod = findMethodByOriginalName(cls, originalMethodName, descriptor);
+    if (declaredMethod != null) {
+      declarations.add(getDeclaredCheckedExceptions(cls, declaredMethod));
+    }
+
+    if (cls.superClass != null) {
+      collectOverriddenMethodCheckedThrows(cls.superClass.getString(), originalMethodName, descriptor, visited, declarations);
+    }
+    for (String ifaceName : cls.getInterfaceNames()) {
+      collectOverriddenMethodCheckedThrows(ifaceName, originalMethodName, descriptor, visited, declarations);
+    }
+  }
+
+  private static @Nullable StructMethod findMethodByOriginalName(StructClass ownerClass, String originalMethodName, String descriptor) {
+    for (StructMethod method : ownerClass.getMethods()) {
+      if (!descriptor.equals(method.getDescriptor())) {
+        continue;
+      }
+      if (originalMethodName.equals(getOriginalMethodName(ownerClass, method))) {
+        return method;
+      }
+    }
+    return null;
+  }
+
+  private static String getOriginalMethodName(StructClass ownerClass, StructMethod method) {
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) {
+      return method.getName();
+    }
+
+    String oldName = interceptor.getOldName(ownerClass.qualifiedName + " " + method.getName() + " " + method.getDescriptor());
+    if (oldName == null) {
+      return method.getName();
+    }
+
+    int split = oldName.indexOf(' ');
+    return split <= 0 ? oldName : oldName.substring(0, split);
+  }
+
+  private static @Nullable List<String> reflectionMethodCheckedExceptions(String className, String methodName, String descriptor) {
+    try {
+      Class<?> owner = Class.forName(toBinaryName(className), false, CheckedExceptionAnalyzer.class.getClassLoader());
+      Class<?>[] params = toParameterClasses(MethodDescriptor.parseDescriptor(descriptor).params);
+
+      Method method;
+      try {
+        method = owner.getDeclaredMethod(methodName, params);
+      }
+      catch (NoSuchMethodException ignored) {
+        method = owner.getMethod(methodName, params);
+      }
+
+      List<String> checked = new ArrayList<>();
+      for (Class<?> thrown : method.getExceptionTypes()) {
+        String internal = thrown.getName().replace('.', '/');
+        if (isCheckedExceptionType(internal)) {
+          checked.add(internal);
+        }
+      }
+      return checked;
+    }
+    catch (ReflectiveOperationException ignored) {
+      return null;
+    }
   }
 
   private static boolean reflectionInvocationThrows(InvocationExprent invocation, String exceptionType) {

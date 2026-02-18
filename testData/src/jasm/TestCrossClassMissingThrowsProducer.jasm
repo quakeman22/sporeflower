@@ -1,0 +1,28 @@
+package pkg;
+
+super public class TestCrossClassMissingThrowsProducer
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method load:"(I)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  getstatic Field in:"Ljava/io/InputStream;";
+  invokevirtual Method java/io/InputStream.read:"()I";
+  pop;
+  iload_0;
+  invokestatic Method java/lang/Integer.valueOf:"(I)Ljava/lang/Integer;";
+  areturn;
+}
+
+} // end Class TestCrossClassMissingThrowsProducer

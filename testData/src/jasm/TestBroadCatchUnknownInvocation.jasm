@@ -1,0 +1,45 @@
+package pkg;
+
+super public class TestBroadCatchUnknownInvocation
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private static Method helper:"()V"
+  stack 0 locals 0
+{
+  invokestatic Method pkg/MissingApi.ping:"()V";
+  return;
+}
+
+public static Method callerCaught:"()V"
+  stack 1 locals 1
+{
+  goto L0;
+  catch t0 java/lang/Exception;
+    stack_frame_type stack1;
+    stack_map class java/lang/Exception;
+    astore_0;
+    return;
+L0:
+  try t0;
+    invokestatic Method helper:"()V";
+    return;
+  endtry t0;
+}
+
+public static Method callerPlain:"()V"
+  stack 0 locals 0
+{
+  invokestatic Method helper:"()V";
+  return;
+}
+
+} // end Class TestBroadCatchUnknownInvocation

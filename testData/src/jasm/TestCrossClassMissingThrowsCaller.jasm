@@ -1,0 +1,20 @@
+package pkg;
+
+super public class TestCrossClassMissingThrowsCaller
+  version 52:0
+{
+
+public static Field value:"Ljava/lang/Object;";
+
+public Method "<init>":"(I)V"
+  stack 2 locals 2
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  iload_1;
+  invokestatic Method pkg/TestCrossClassMissingThrowsProducer.load:"(I)Ljava/lang/Object;";
+  putstatic Field value:"Ljava/lang/Object;";
+  return;
+}
+
+} // end Class TestCrossClassMissingThrowsCaller

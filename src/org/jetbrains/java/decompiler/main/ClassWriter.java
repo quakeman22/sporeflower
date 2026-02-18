@@ -1437,12 +1437,12 @@ public class ClassWriter implements StatementWriter {
         if (descriptor != null && !descriptor.exceptionTypes.isEmpty()) {
           renderedThrows.addAll(descriptor.exceptionTypes);
         }
-        else if (attr != null) {
+        else if (attr != null && !attr.getThrowsExceptions().isEmpty()) {
           for (int i = 0; i < attr.getThrowsExceptions().size(); i++) {
             renderedThrows.add(new VarType(attr.getExcClassname(i, cl.getPool()), true));
           }
         }
-        else if (mt.containsCode() && methodWrapper.root != null && shouldInferMissingThrows(mt)) {
+        if (renderedThrows.isEmpty() && mt.containsCode() && methodWrapper.root != null && checkedExceptionAnalyzer.shouldInferMissingThrows(cl, mt)) {
           for (String inferred : checkedExceptionAnalyzer.inferMissingCheckedExceptions(cl, wrapper, mt, methodWrapper)) {
             renderedThrows.add(new VarType(inferred, true));
           }
@@ -2184,10 +2184,4 @@ public class ClassWriter implements StatementWriter {
     }
   }
 
-  private static boolean shouldInferMissingThrows(StructMethod method) {
-    if (CodeConstants.INIT_NAME.equals(method.getName())) {
-      return true;
-    }
-    return method.hasModifier(CodeConstants.ACC_PRIVATE) || method.hasModifier(CodeConstants.ACC_STATIC);
-  }
 }
