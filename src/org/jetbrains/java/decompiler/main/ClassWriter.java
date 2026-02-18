@@ -1442,7 +1442,7 @@ public class ClassWriter implements StatementWriter {
             renderedThrows.add(new VarType(attr.getExcClassname(i, cl.getPool()), true));
           }
         }
-        if (renderedThrows.isEmpty() && mt.containsCode() && methodWrapper.root != null && checkedExceptionAnalyzer.shouldInferMissingThrows(cl, mt)) {
+        if (renderedThrows.isEmpty() && mt.containsCode() && methodWrapper.root != null) {
           for (String inferred : checkedExceptionAnalyzer.inferMissingCheckedExceptions(cl, wrapper, mt, methodWrapper)) {
             renderedThrows.add(new VarType(inferred, true));
           }

@@ -5,6 +5,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.ClassesProcessor;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
+import org.jetbrains.java.decompiler.main.plugins.PluginContext;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
@@ -44,6 +45,7 @@ public final class CheckedExceptionAnalyzer {
   };
 
   private final Map<String, List<String>> inferredCheckedExceptions = new HashMap<>();
+  private final Map<String, ClassWrapper> detachedOwnClassWrappers = new HashMap<>();
   private final Set<String> inferenceStack = new HashSet<>();
   private final Set<String> throwabilityStack = new HashSet<>();
 
@@ -53,13 +55,6 @@ public final class CheckedExceptionAnalyzer {
 
   public static Scope activate(CheckedExceptionAnalyzer analyzer) {
     return new Scope(analyzer);
-  }
-
-  public boolean shouldInferMissingThrows(StructClass ownerClass, StructMethod method) {
-    // Inference currently acts as a repair pass for missing/empty Exceptions metadata.
-    // Keep enabled globally; downstream filters (private-only callsite augmentation,
-    // override-compatibility checks, catch reachability checks) constrain output.
-    return true;
   }
 
   public CatchRewrite rewriteCatchTypes(Statement tryBody, List<String> exceptionTypes, List<String> previousCatchTypes) {
@@ -492,7 +487,7 @@ public final class CheckedExceptionAnalyzer {
     return Collections.emptyList();
   }
 
-  private static @Nullable ClassWrapper resolveClassWrapper(StructClass invokedClass, StructClass ownerClass, ClassWrapper ownerWrapper) {
+  private @Nullable ClassWrapper resolveClassWrapper(StructClass invokedClass, StructClass ownerClass, ClassWrapper ownerWrapper) {
     // Fast path for same-class calls: re-use wrapper already attached to current context.
     if (ownerClass != null
       && ownerWrapper != null
@@ -508,11 +503,50 @@ public final class CheckedExceptionAnalyzer {
     }
 
     ClassesProcessor.ClassNode node = processor.getMapRootClasses().get(invokedClass.qualifiedName);
-    if (node == null) {
+    if (node != null) {
+      ClassWrapper wrapper = node.getWrapper();
+      if (wrapper != null) {
+        return wrapper;
+      }
+    }
+
+    // If wrappers were already destroyed for that class, build a detached wrapper on demand.
+    // This keeps inference behavior stable regardless of class write ordering.
+    return getOrCreateDetachedClassWrapper(invokedClass);
+  }
+
+  private @Nullable ClassWrapper getOrCreateDetachedClassWrapper(StructClass invokedClass) {
+    if (!invokedClass.isOwn()) {
       return null;
     }
 
-    return node.getWrapper();
+    ClassWrapper cached = detachedOwnClassWrappers.get(invokedClass.qualifiedName);
+    if (cached != null) {
+      return cached;
+    }
+
+    ClassWrapper created = createDetachedClassWrapper(invokedClass);
+    if (created != null) {
+      detachedOwnClassWrappers.put(invokedClass.qualifiedName, created);
+    }
+    return created;
+  }
+
+  private static @Nullable ClassWrapper createDetachedClassWrapper(StructClass invokedClass) {
+    StructClass previousClass = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS);
+    ClassWrapper previousWrapper = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_WRAPPER);
+    try {
+      ClassWrapper wrapper = new ClassWrapper(invokedClass);
+      wrapper.init(PluginContext.getCurrentContext().getLanguageSpec(invokedClass));
+      return wrapper;
+    }
+    catch (Throwable ignored) {
+      return null;
+    }
+    finally {
+      DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS, previousClass);
+      DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_WRAPPER, previousWrapper);
+    }
   }
 
   private boolean invocationThrows(InvocationExprent invocation, String exceptionType) {
@@ -542,10 +576,14 @@ public final class CheckedExceptionAnalyzer {
 
       StructClass currentClass = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS);
       ClassWrapper currentWrapper = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_WRAPPER);
-      if (currentClass != null && currentWrapper != null && currentClass.qualifiedName.equals(cls.qualifiedName) && method.containsCode()) {
-        MethodWrapper methodWrapper = currentWrapper.getMethodWrapper(method.getName(), method.getDescriptor());
+      // Mirror getInvocationCheckedExceptions behavior here: if metadata is missing,
+      // analyze own-class callees directly (including cross-class) instead of assuming
+      // they may throw everything.
+      ClassWrapper resolvedWrapper = resolveClassWrapper(cls, currentClass, currentWrapper);
+      if (resolvedWrapper != null && method.containsCode()) {
+        MethodWrapper methodWrapper = resolvedWrapper.getMethodWrapper(method.getName(), method.getDescriptor());
         if (methodWrapper != null && methodWrapper.root != null) {
-          String recursionKey = buildMethodKey(currentClass, method) + " -> " + exceptionType;
+          String recursionKey = buildMethodKey(cls, method) + " -> " + exceptionType;
           if (throwabilityStack.add(recursionKey)) {
             try {
               return canStatementThrow(methodWrapper.root.getFirst(), exceptionType);

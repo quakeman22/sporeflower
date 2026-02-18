@@ -1,0 +1,31 @@
+package pkg;
+
+super public class TestCrossClassMissingThrowsCatchRewriteOrderCaller
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"()V"
+  stack 1 locals 1
+{
+  goto L0;
+  catch t0 java/io/IOException;
+    stack_frame_type stack1;
+    stack_map class java/io/IOException;
+    astore_0;
+    return;
+L0:
+  try t0;
+    invokestatic Method pkg/TestCrossClassMissingThrowsCatchRewriteOrder.ping:"()V";
+    return;
+  endtry t0;
+}
+
+} // end Class TestCrossClassMissingThrowsCatchRewriteOrderCaller
