@@ -1,0 +1,34 @@
+package pkg;
+
+super public class TestPartialMultiCatchRewrite
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"()V"
+  stack 1 locals 1
+{
+  goto L0;
+  catch t0 java/io/IOException;
+  catch t0 java/lang/ClassNotFoundException;
+    stack_frame_type stack1;
+    stack_map class java/lang/Exception;
+    astore_0;
+    return;
+L0:
+  try t0;
+    ldc String "missing.Clazz";
+    invokestatic Method java/lang/Class.forName:"(Ljava/lang/String;)Ljava/lang/Class;";
+    pop;
+    return;
+  endtry t0;
+}
+
+} // end Class TestPartialMultiCatchRewrite
