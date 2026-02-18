@@ -19,6 +19,8 @@ import org.jetbrains.java.decompiler.modules.decompiler.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchAllStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor;
@@ -42,6 +44,8 @@ import org.jetbrains.java.decompiler.util.*;
 import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -55,6 +59,8 @@ public class ClassWriter implements StatementWriter {
   ));
   private final PoolInterceptor interceptor;
   private final IFabricJavadocProvider javadocProvider;
+  private final Map<String, List<String>> inferredCheckedExceptions = new HashMap<>();
+  private final Set<String> inferringCheckedExceptions = new HashSet<>();
 
   public ClassWriter() {
     interceptor = DecompilerContext.getPoolInterceptor();
@@ -1285,17 +1291,30 @@ public class ClassWriter implements StatementWriter {
         }
 
         StructExceptionsAttribute attr = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_EXCEPTIONS);
-        if ((descriptor != null && !descriptor.exceptionTypes.isEmpty()) || attr != null) {
+        List<VarType> renderedThrows = new ArrayList<>();
+        if (descriptor != null && !descriptor.exceptionTypes.isEmpty()) {
+          renderedThrows.addAll(descriptor.exceptionTypes);
+        }
+        else if (attr != null) {
+          for (int i = 0; i < attr.getThrowsExceptions().size(); i++) {
+            renderedThrows.add(new VarType(attr.getExcClassname(i, cl.getPool()), true));
+          }
+        }
+        else if (mt.containsCode() && methodWrapper.root != null) {
+          for (String inferred : inferMissingCheckedExceptions(cl, wrapper, mt, methodWrapper)) {
+            renderedThrows.add(new VarType(inferred, true));
+          }
+        }
+
+        if (!renderedThrows.isEmpty()) {
           throwsExceptions = true;
           buffer.append(" throws ");
 
-          boolean useDescriptor = descriptor != null && !descriptor.exceptionTypes.isEmpty();
-          for (int i = 0; i < (attr == null ? descriptor.exceptionTypes.size() : attr.getThrowsExceptions().size()); i++) {
+          for (int i = 0; i < renderedThrows.size(); i++) {
             if (i > 0) {
               buffer.append(", ");
             }
-            VarType type = useDescriptor ? descriptor.exceptionTypes.get(i) : new VarType(attr.getExcClassname(i, cl.getPool()), true);
-            buffer.appendCastTypeName(type);
+            buffer.appendCastTypeName(renderedThrows.get(i));
           }
         }
       }
@@ -1661,6 +1680,293 @@ public class ClassWriter implements StatementWriter {
     } else if (constant instanceof LinkConstant) {
       LinkConstant linkConstant = (LinkConstant) constant;
       sb.append(linkConstant.classname).append('.').append(linkConstant.elementname).append(' ').append(linkConstant.descriptor);
+    }
+  }
+
+  private List<String> inferMissingCheckedExceptions(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method, MethodWrapper methodWrapper) {
+    String methodKey = ownerClass.qualifiedName + " " + InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor());
+    List<String> cached = inferredCheckedExceptions.get(methodKey);
+    if (cached != null) {
+      return cached;
+    }
+    if (!inferringCheckedExceptions.add(methodKey)) {
+      return Collections.emptyList();
+    }
+
+    try {
+      if (methodWrapper == null || methodWrapper.root == null) {
+        inferredCheckedExceptions.put(methodKey, Collections.emptyList());
+        return Collections.emptyList();
+      }
+
+      LinkedHashSet<String> escaping = new LinkedHashSet<>();
+      collectEscapingCheckedExceptions(methodWrapper.root.getFirst(), ownerClass, ownerWrapper, Collections.emptyList(), escaping);
+      List<String> inferred = new ArrayList<>(escaping);
+      inferredCheckedExceptions.put(methodKey, inferred);
+      return inferred;
+    }
+    finally {
+      inferringCheckedExceptions.remove(methodKey);
+    }
+  }
+
+  private void collectEscapingCheckedExceptions(
+    Statement statement,
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    List<String> activeCatchTypes,
+    LinkedHashSet<String> escapingExceptions
+  ) {
+    if (statement == null) {
+      return;
+    }
+
+    if (statement instanceof CatchStatement catchStatement) {
+      List<String> localCatchTypes = new ArrayList<>();
+      for (List<String> catchTypes : catchStatement.getExctStrings()) {
+        localCatchTypes.addAll(catchTypes);
+      }
+      List<String> tryCatchTypes = new ArrayList<>(activeCatchTypes);
+      tryCatchTypes.addAll(localCatchTypes);
+
+      collectEscapingCheckedExceptionsFromExprents(catchStatement.getResources(), ownerClass, ownerWrapper, tryCatchTypes, escapingExceptions);
+      collectEscapingCheckedExceptions(catchStatement.getFirst(), ownerClass, ownerWrapper, tryCatchTypes, escapingExceptions);
+      for (int i = 1; i < catchStatement.getStats().size(); i++) {
+        collectEscapingCheckedExceptions(catchStatement.getStats().get(i), ownerClass, ownerWrapper, activeCatchTypes, escapingExceptions);
+      }
+      return;
+    }
+
+    if (statement instanceof CatchAllStatement catchAllStatement) {
+      List<String> tryCatchTypes = activeCatchTypes;
+      if (!catchAllStatement.isFinally()) {
+        tryCatchTypes = new ArrayList<>(activeCatchTypes);
+        tryCatchTypes.add("java/lang/Throwable");
+      }
+      collectEscapingCheckedExceptions(catchAllStatement.getFirst(), ownerClass, ownerWrapper, tryCatchTypes, escapingExceptions);
+      collectEscapingCheckedExceptions(catchAllStatement.getHandler(), ownerClass, ownerWrapper, activeCatchTypes, escapingExceptions);
+      return;
+    }
+
+    List<Exprent> exprents = statement.getExprents();
+    if (exprents != null) {
+      collectEscapingCheckedExceptionsFromExprents(exprents, ownerClass, ownerWrapper, activeCatchTypes, escapingExceptions);
+    }
+    else {
+      collectEscapingCheckedExceptionsFromExprents(statement.getStatExprents(), ownerClass, ownerWrapper, activeCatchTypes, escapingExceptions);
+    }
+
+    for (Statement child : statement.getStats()) {
+      collectEscapingCheckedExceptions(child, ownerClass, ownerWrapper, activeCatchTypes, escapingExceptions);
+    }
+  }
+
+  private void collectEscapingCheckedExceptionsFromExprents(
+    List<Exprent> exprents,
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    List<String> activeCatchTypes,
+    LinkedHashSet<String> escapingExceptions
+  ) {
+    for (Exprent exprent : exprents) {
+      collectEscapingCheckedExceptionsFromExprent(exprent, ownerClass, ownerWrapper, activeCatchTypes, escapingExceptions);
+    }
+  }
+
+  private void collectEscapingCheckedExceptionsFromExprent(
+    Exprent exprent,
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    List<String> activeCatchTypes,
+    LinkedHashSet<String> escapingExceptions
+  ) {
+    List<Exprent> nestedExprents = new ArrayList<>(exprent.getAllExprents(true, true));
+    nestedExprents.add(exprent);
+
+    for (Exprent nested : nestedExprents) {
+      if (nested instanceof InvocationExprent invocation) {
+        for (String thrownException : getInvocationCheckedExceptions(invocation, ownerClass, ownerWrapper)) {
+          if (!isCaughtByActiveCatches(thrownException, activeCatchTypes)) {
+            escapingExceptions.add(thrownException);
+          }
+        }
+      }
+      else if (nested instanceof ExitExprent exitExprent && exitExprent.getExitType() == ExitExprent.Type.THROW) {
+        Exprent throwValue = exitExprent.getValue();
+        if (throwValue != null) {
+          VarType thrownType = throwValue.getExprType();
+          if (thrownType.type == CodeType.OBJECT && thrownType.value != null && isCheckedExceptionType(thrownType.value)) {
+            if (!isCaughtByActiveCatches(thrownType.value, activeCatchTypes)) {
+              escapingExceptions.add(thrownType.value);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private List<String> getInvocationCheckedExceptions(InvocationExprent invocation, StructClass ownerClass, ClassWrapper ownerWrapper) {
+    String className = invocation.getClassname();
+    if (className == null) {
+      return Collections.emptyList();
+    }
+
+    StructClass invokedClass = DecompilerContext.getStructContext().getClass(className);
+    if (invokedClass != null) {
+      StructMethod invokedMethod = invokedClass.getMethod(invocation.getName(), invocation.getStringDescriptor());
+      if (invokedMethod == null) {
+        invokedMethod = invokedClass.getMethodRecursive(invocation.getName(), invocation.getStringDescriptor());
+      }
+      if (invokedMethod == null) {
+        return Collections.emptyList();
+      }
+
+      List<String> declared = getDeclaredCheckedExceptions(invokedClass, invokedMethod);
+      if (!declared.isEmpty()) {
+        return declared;
+      }
+
+      if (ownerClass != null
+        && ownerWrapper != null
+        && ownerClass.qualifiedName.equals(invokedClass.qualifiedName)
+        && invokedMethod.containsCode()) {
+        MethodWrapper invokedWrapper = ownerWrapper.getMethodWrapper(invokedMethod.getName(), invokedMethod.getDescriptor());
+        if (invokedWrapper != null) {
+          return inferMissingCheckedExceptions(ownerClass, ownerWrapper, invokedMethod, invokedWrapper);
+        }
+      }
+
+      return Collections.emptyList();
+    }
+
+    if (className.startsWith("java/")) {
+      return getReflectionCheckedExceptions(invocation);
+    }
+
+    return Collections.emptyList();
+  }
+
+  private static List<String> getDeclaredCheckedExceptions(StructClass ownerClass, StructMethod method) {
+    StructExceptionsAttribute exceptionsAttribute = method.getAttribute(StructGeneralAttribute.ATTRIBUTE_EXCEPTIONS);
+    if (exceptionsAttribute == null) {
+      return Collections.emptyList();
+    }
+
+    List<String> checkedExceptions = new ArrayList<>();
+    for (int i = 0; i < exceptionsAttribute.getThrowsExceptions().size(); i++) {
+      String exceptionClass = exceptionsAttribute.getExcClassname(i, ownerClass.getPool());
+      if (isCheckedExceptionType(exceptionClass)) {
+        checkedExceptions.add(exceptionClass);
+      }
+    }
+    return checkedExceptions;
+  }
+
+  private static List<String> getReflectionCheckedExceptions(InvocationExprent invocation) {
+    try {
+      Class<?> owner = Class.forName(toBinaryName(invocation.getClassname()));
+      Class<?>[] parameterTypes = toParameterClasses(MethodDescriptor.parseDescriptor(invocation.getStringDescriptor()).params);
+      List<String> checkedExceptions = new ArrayList<>();
+
+      if (CodeConstants.INIT_NAME.equals(invocation.getName())) {
+        Constructor<?> constructor = owner.getDeclaredConstructor(parameterTypes);
+        for (Class<?> exceptionType : constructor.getExceptionTypes()) {
+          String internalName = exceptionType.getName().replace('.', '/');
+          if (isCheckedExceptionType(internalName)) {
+            checkedExceptions.add(internalName);
+          }
+        }
+        return checkedExceptions;
+      }
+
+      Method method;
+      try {
+        method = owner.getDeclaredMethod(invocation.getName(), parameterTypes);
+      }
+      catch (NoSuchMethodException ignored) {
+        method = owner.getMethod(invocation.getName(), parameterTypes);
+      }
+
+      for (Class<?> exceptionType : method.getExceptionTypes()) {
+        String internalName = exceptionType.getName().replace('.', '/');
+        if (isCheckedExceptionType(internalName)) {
+          checkedExceptions.add(internalName);
+        }
+      }
+      return checkedExceptions;
+    }
+    catch (ReflectiveOperationException ignored) {
+      return Collections.emptyList();
+    }
+  }
+
+  private static boolean isCaughtByActiveCatches(String thrownException, List<String> activeCatchTypes) {
+    for (String catchType : activeCatchTypes) {
+      if ("java/lang/Throwable".equals(catchType) || thrownException.equals(catchType)) {
+        return true;
+      }
+      if (DecompilerContext.getStructContext().instanceOf(thrownException, catchType) || isSubtypeByReflection(thrownException, catchType)) {
+        return true;
+      }
+      if ("java/lang/Exception".equals(catchType) && (thrownException.endsWith("Exception") || thrownException.endsWith("Throwable"))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isCheckedExceptionType(String exceptionType) {
+    if (exceptionType == null) {
+      return false;
+    }
+
+    if (DecompilerContext.getStructContext().instanceOf(exceptionType, "java/lang/Throwable")) {
+      return !DecompilerContext.getStructContext().instanceOf(exceptionType, "java/lang/RuntimeException") &&
+             !DecompilerContext.getStructContext().instanceOf(exceptionType, "java/lang/Error");
+    }
+
+    return exceptionType.endsWith("Exception") || exceptionType.endsWith("Throwable");
+  }
+
+  private static String toBinaryName(String internalName) {
+    return internalName.replace('/', '.');
+  }
+
+  private static Class<?>[] toParameterClasses(VarType[] params) throws ClassNotFoundException {
+    Class<?>[] result = new Class<?>[params.length];
+    for (int i = 0; i < params.length; i++) {
+      result[i] = toClass(params[i]);
+    }
+    return result;
+  }
+
+  private static Class<?> toClass(VarType type) throws ClassNotFoundException {
+    if (type.arrayDim > 0) {
+      return Class.forName(type.toString().replace('/', '.'));
+    }
+
+    return switch (type.type) {
+      case BOOLEAN -> boolean.class;
+      case BYTE -> byte.class;
+      case CHAR -> char.class;
+      case SHORT -> short.class;
+      case INT -> int.class;
+      case LONG -> long.class;
+      case FLOAT -> float.class;
+      case DOUBLE -> double.class;
+      case OBJECT -> Class.forName(toBinaryName(type.value));
+      default -> Class.forName("java.lang.Object");
+    };
+  }
+
+  private static boolean isSubtypeByReflection(String thrownException, String catchType) {
+    try {
+      Class<?> thrown = Class.forName(toBinaryName(thrownException));
+      Class<?> caught = Class.forName(toBinaryName(catchType));
+      return caught.isAssignableFrom(thrown);
+    }
+    catch (ReflectiveOperationException ignored) {
+      return false;
     }
   }
 
