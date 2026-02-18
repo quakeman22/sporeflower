@@ -42,8 +42,9 @@ final class CheckedStatementWalker {
       if (walk(catchStatement.getFirst(), tryCatchTypes, catchAllPolicy, exprentVisitor)) {
         return true;
       }
-      for (int i = 1; i < catchStatement.getStats().size(); i++) {
-        if (walk(catchStatement.getStats().get(i), activeCatchTypes, catchAllPolicy, exprentVisitor)) {
+      List<Statement> catchChildren = new ArrayList<>(catchStatement.getStats());
+      for (int i = 1; i < catchChildren.size(); i++) {
+        if (walk(catchChildren.get(i), activeCatchTypes, catchAllPolicy, exprentVisitor)) {
           return true;
         }
       }
@@ -68,7 +69,9 @@ final class CheckedStatementWalker {
       return true;
     }
 
-    for (Statement child : statement.getStats()) {
+    // Re-entrant checked-exception inference can trigger statement tree rewrites while walking.
+    // Iterate a stable snapshot to avoid fail-fast iterator crashes.
+    for (Statement child : new ArrayList<>(statement.getStats())) {
       if (walk(child, activeCatchTypes, catchAllPolicy, exprentVisitor)) {
         return true;
       }
