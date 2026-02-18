@@ -804,8 +804,18 @@ public class ExprProcessor implements CodeConstants {
   }
 
   public static String getCastTypeName(VarType type, boolean getShort) {
-    StringBuilder s = new StringBuilder(getTypeName(type, getShort));
-    TextUtil.append(s, "[]", type.arrayDim);
+    VarType renderType = type;
+    // BYTECHAR/SHORTCHAR are lattice helper types and are not valid Java source casts.
+    // For explicit casts, render concrete primitive names.
+    if (type.type == CodeType.BYTECHAR) {
+      renderType = VarType.VARTYPE_BYTE.resizeArrayDim(type.arrayDim);
+    }
+    else if (type.type == CodeType.SHORTCHAR) {
+      renderType = VarType.VARTYPE_SHORT.resizeArrayDim(type.arrayDim);
+    }
+
+    StringBuilder s = new StringBuilder(getTypeName(renderType, getShort));
+    TextUtil.append(s, "[]", renderType.arrayDim);
     return s.toString();
   }
 

@@ -1362,7 +1362,10 @@ public class ClassWriter implements StatementWriter {
         List<VarType> exceptions = new ArrayList<>();
         if (attr != null) {
           for (int i = 0; i < attr.getThrowsExceptions().size(); i++) {
-            exceptions.add(new VarType(attr.getExcClassname(i, node.classStruct.getPool()), true));
+            String exceptionClass = attr.getExcClassname(i, node.classStruct.getPool());
+            if (exceptionClass != null) {
+              exceptions.add(new VarType(exceptionClass, true));
+            }
           }
         }
 
@@ -1439,7 +1442,10 @@ public class ClassWriter implements StatementWriter {
         }
         else if (attr != null && !attr.getThrowsExceptions().isEmpty()) {
           for (int i = 0; i < attr.getThrowsExceptions().size(); i++) {
-            renderedThrows.add(new VarType(attr.getExcClassname(i, cl.getPool()), true));
+            String exceptionClass = attr.getExcClassname(i, cl.getPool());
+            if (exceptionClass != null) {
+              renderedThrows.add(new VarType(exceptionClass, true));
+            }
           }
         }
         if (renderedThrows.isEmpty() && mt.containsCode() && methodWrapper.root != null) {

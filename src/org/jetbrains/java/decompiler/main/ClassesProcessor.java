@@ -22,13 +22,20 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
+import org.jetbrains.java.decompiler.struct.StructField;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructEnclosingMethodAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructInnerClassesAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructLineNumberTableAttribute;
 import org.jetbrains.java.decompiler.struct.consts.ConstantPool;
+import org.jetbrains.java.decompiler.struct.gen.CodeType;
+import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
+import org.jetbrains.java.decompiler.struct.gen.generics.GenericFieldDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.generics.GenericMethodDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.generics.GenericType;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.TextBuffer;
 
@@ -300,6 +307,12 @@ public class ClassesProcessor implements CodeConstants {
                 if (verifyAnonymousClasses && nestedNode.type == ClassNode.Type.ANONYMOUS && !isAnonymous(nestedNode.classStruct, scl)) {
                   nestedNode.type = ClassNode.Type.LOCAL;
                 }
+                // Anonymous classes cannot be named in Java source. If the enclosing class
+                // signature explicitly references the nested type, keep it representable.
+                if (nestedNode.type == ClassNode.Type.ANONYMOUS &&
+                    isReferencedByEnclosingSignatures(nestedNode.classStruct, scl)) {
+                  nestedNode.type = entry.outerNameIdx == 0 ? ClassNode.Type.LOCAL : ClassNode.Type.MEMBER;
+                }
 
                 if (nestedNode.type == ClassNode.Type.ANONYMOUS) {
                   StructClass cl = nestedNode.classStruct;
@@ -424,6 +437,81 @@ public class ClassesProcessor implements CodeConstants {
     }
 
     return true;
+  }
+
+  private static boolean isReferencedByEnclosingSignatures(StructClass nestedClass, StructClass enclosingClass) {
+    String nestedName = nestedClass.qualifiedName;
+
+    for (StructField field : enclosingClass.getFields()) {
+      if (containsClassTypeReference(FieldDescriptor.parseDescriptor(field.getDescriptor()).type, nestedName)) {
+        return true;
+      }
+      GenericFieldDescriptor signature = field.getSignature();
+      if (signature != null && containsClassTypeReference(signature.type, nestedName)) {
+        return true;
+      }
+    }
+
+    for (StructMethod method : enclosingClass.getMethods()) {
+      MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.getDescriptor());
+      if (containsClassTypeReference(descriptor.ret, nestedName)) {
+        return true;
+      }
+      for (VarType parameter : descriptor.params) {
+        if (containsClassTypeReference(parameter, nestedName)) {
+          return true;
+        }
+      }
+
+      GenericMethodDescriptor signature = method.getSignature();
+      if (signature != null) {
+        if (containsClassTypeReference(signature.returnType, nestedName)) {
+          return true;
+        }
+        for (VarType parameter : signature.parameterTypes) {
+          if (containsClassTypeReference(parameter, nestedName)) {
+            return true;
+          }
+        }
+        for (VarType exceptionType : signature.exceptionTypes) {
+          if (containsClassTypeReference(exceptionType, nestedName)) {
+            return true;
+          }
+        }
+        for (List<VarType> bounds : signature.typeParameterBounds) {
+          for (VarType bound : bounds) {
+            if (containsClassTypeReference(bound, nestedName)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private static boolean containsClassTypeReference(VarType type, String className) {
+    if (type == null) {
+      return false;
+    }
+    if (type.type == CodeType.OBJECT && className.equals(type.value)) {
+      return true;
+    }
+    if (!type.isGeneric()) {
+      return false;
+    }
+
+    GenericType genericType = (GenericType)type;
+    if (containsClassTypeReference(genericType.getParent(), className)) {
+      return true;
+    }
+    for (VarType argument : genericType.getArguments()) {
+      if (containsClassTypeReference(argument, className)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public void processClass(StructClass cl) throws IOException {

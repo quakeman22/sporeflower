@@ -49,6 +49,16 @@ public final class CheckedExceptionAnalyzer {
   private final Set<String> inferenceStack = new HashSet<>();
   private final Set<String> throwabilityStack = new HashSet<>();
 
+  private static final class MethodResolution {
+    private final StructClass ownerClass;
+    private final StructMethod method;
+
+    private MethodResolution(StructClass ownerClass, StructMethod method) {
+      this.ownerClass = ownerClass;
+      this.method = method;
+    }
+  }
+
   public static @Nullable CheckedExceptionAnalyzer active() {
     return ACTIVE.get();
   }
@@ -451,25 +461,27 @@ public final class CheckedExceptionAnalyzer {
 
     StructClass invokedClass = DecompilerContext.getStructContext().getClass(className);
     if (invokedClass != null) {
-      StructMethod invokedMethod = findMethod(invokedClass, invocation);
-      if (invokedMethod == null) {
+      MethodResolution resolution = findMethodResolution(invokedClass, invocation);
+      if (resolution == null) {
         return Collections.emptyList();
       }
+      StructClass methodOwner = resolution.ownerClass;
+      StructMethod invokedMethod = resolution.method;
 
-      List<String> declared = getDeclaredCheckedExceptions(invokedClass, invokedMethod);
+      List<String> declared = getDeclaredCheckedExceptions(methodOwner, invokedMethod);
       if (!declared.isEmpty()) {
         return declared;
       }
 
-      if (invokedClass.isOwn() && invokedMethod.containsCode()) {
+      if (methodOwner.isOwn() && invokedMethod.containsCode()) {
         // Cross-class inference for own classes is required when missing throws metadata
         // exists on callees outside the current class (common in obfuscated jars).
-        ClassWrapper invokedClassWrapper = resolveClassWrapper(invokedClass, ownerClass, ownerWrapper);
+        ClassWrapper invokedClassWrapper = resolveClassWrapper(methodOwner, ownerClass, ownerWrapper);
         MethodWrapper invokedWrapper = invokedClassWrapper == null
           ? null
           : invokedClassWrapper.getMethodWrapper(invokedMethod.getName(), invokedMethod.getDescriptor());
         if (invokedWrapper != null) {
-          return inferMissingCheckedExceptions(invokedClass, invokedClassWrapper, invokedMethod, invokedWrapper);
+          return inferMissingCheckedExceptions(methodOwner, invokedClassWrapper, invokedMethod, invokedWrapper);
         }
       }
 
@@ -563,14 +575,16 @@ public final class CheckedExceptionAnalyzer {
       return true;
     }
 
-    StructMethod method = findMethod(cls, invocation);
-    if (method == null) {
+    MethodResolution resolution = findMethodResolution(cls, invocation);
+    if (resolution == null) {
       return true;
     }
+    StructClass methodOwner = resolution.ownerClass;
+    StructMethod method = resolution.method;
 
     StructExceptionsAttribute exceptions = method.getAttribute(StructGeneralAttribute.ATTRIBUTE_EXCEPTIONS);
     if (exceptions == null) {
-      if (className.startsWith("java/")) {
+      if (methodOwner.qualifiedName.startsWith("java/") || className.startsWith("java/")) {
         return reflectionInvocationThrows(invocation, exceptionType);
       }
 
@@ -579,11 +593,11 @@ public final class CheckedExceptionAnalyzer {
       // Mirror getInvocationCheckedExceptions behavior here: if metadata is missing,
       // analyze own-class callees directly (including cross-class) instead of assuming
       // they may throw everything.
-      ClassWrapper resolvedWrapper = resolveClassWrapper(cls, currentClass, currentWrapper);
+      ClassWrapper resolvedWrapper = resolveClassWrapper(methodOwner, currentClass, currentWrapper);
       if (resolvedWrapper != null && method.containsCode()) {
         MethodWrapper methodWrapper = resolvedWrapper.getMethodWrapper(method.getName(), method.getDescriptor());
         if (methodWrapper != null && methodWrapper.root != null) {
-          String recursionKey = buildMethodKey(cls, method) + " -> " + exceptionType;
+          String recursionKey = buildMethodKey(methodOwner, method) + " -> " + exceptionType;
           if (throwabilityStack.add(recursionKey)) {
             try {
               return canStatementThrow(methodWrapper.root.getFirst(), exceptionType);
@@ -598,11 +612,22 @@ public final class CheckedExceptionAnalyzer {
       return true;
     }
 
+    boolean sawMalformedThrowsEntry = false;
     for (int i = 0; i < exceptions.getThrowsExceptions().size(); i++) {
-      String thrownClass = exceptions.getExcClassname(i, cls.getPool());
+      String thrownClass = exceptions.getExcClassname(i, methodOwner.getPool());
+      if (thrownClass == null) {
+        sawMalformedThrowsEntry = true;
+        continue;
+      }
       if (isSubtypeOf(thrownClass, exceptionType)) {
         return true;
       }
+    }
+
+    if (sawMalformedThrowsEntry) {
+      // Malformed Exceptions attributes are common in obfuscated/J2ME inputs.
+      // Keep catch-rewrite logic conservative when declared throws cannot be decoded.
+      return true;
     }
 
     return false;
@@ -617,25 +642,20 @@ public final class CheckedExceptionAnalyzer {
     List<String> checkedExceptions = new ArrayList<>();
     for (int i = 0; i < exceptionsAttribute.getThrowsExceptions().size(); i++) {
       String exceptionClass = exceptionsAttribute.getExcClassname(i, ownerClass.getPool());
-      if (isCheckedExceptionType(exceptionClass)) {
+      if (exceptionClass != null && isCheckedExceptionType(exceptionClass)) {
         checkedExceptions.add(exceptionClass);
       }
     }
     return checkedExceptions;
   }
 
-  private static @Nullable StructMethod findMethod(StructClass cls, InvocationExprent invocation) {
+  private static @Nullable MethodResolution findMethodResolution(StructClass cls, InvocationExprent invocation) {
     String invocationName = invocation.getName();
     String descriptor = invocation.getStringDescriptor();
 
-    StructMethod method = cls.getMethod(invocationName, descriptor);
-    if (method != null) {
-      return method;
-    }
-
-    method = cls.getMethodRecursive(invocationName, descriptor);
-    if (method != null) {
-      return method;
+    MethodResolution resolved = findMethodInHierarchy(cls, invocationName, descriptor, new HashSet<>());
+    if (resolved != null) {
+      return resolved;
     }
 
     PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
@@ -655,11 +675,45 @@ public final class CheckedExceptionAnalyzer {
     }
 
     String renamedMethodName = mapped.substring(firstSpace + 1, secondSpace);
-    method = cls.getMethod(renamedMethodName, descriptor);
-    if (method == null) {
-      method = cls.getMethodRecursive(renamedMethodName, descriptor);
+    return findMethodInHierarchy(cls, renamedMethodName, descriptor, new HashSet<>());
+  }
+
+  private static @Nullable MethodResolution findMethodInHierarchy(
+    StructClass cls,
+    String methodName,
+    String descriptor,
+    Set<String> visited
+  ) {
+    if (!visited.add(cls.qualifiedName)) {
+      return null;
     }
-    return method;
+
+    StructMethod method = cls.getMethod(methodName, descriptor);
+    if (method != null) {
+      return new MethodResolution(cls, method);
+    }
+
+    if (cls.superClass != null) {
+      StructClass superClass = DecompilerContext.getStructContext().getClass(cls.superClass.getString());
+      if (superClass != null) {
+        MethodResolution fromSuper = findMethodInHierarchy(superClass, methodName, descriptor, visited);
+        if (fromSuper != null) {
+          return fromSuper;
+        }
+      }
+    }
+
+    for (String interfaceName : cls.getInterfaceNames()) {
+      StructClass intf = DecompilerContext.getStructContext().getClass(interfaceName);
+      if (intf != null) {
+        MethodResolution fromInterface = findMethodInHierarchy(intf, methodName, descriptor, visited);
+        if (fromInterface != null) {
+          return fromInterface;
+        }
+      }
+    }
+
+    return null;
   }
 
   private static String selectFallbackCatchType(List<String> previousCatchTypes) {

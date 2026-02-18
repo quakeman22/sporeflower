@@ -181,6 +181,10 @@ public class ConstantPool implements NewClassNameBuilder {
 
   @Override
   public String buildNewClassname(String className) {
+    if (interceptor == null) {
+      return null;
+    }
+
     VarType vt = new VarType(className, true);
 
     String newName = interceptor.getName(vt.value);

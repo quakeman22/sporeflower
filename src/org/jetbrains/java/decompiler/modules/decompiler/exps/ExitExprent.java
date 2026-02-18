@@ -99,6 +99,9 @@ public class ExitExprent extends Exprent {
 
           for (int i = 0; i < attr.getThrowsExceptions().size(); i++) {
             String exClassName = attr.getExcClassname(i, node.classStruct.getPool());
+            if (exClassName == null) {
+              continue;
+            }
             if ("java/lang/Throwable".equals(exClassName)) {
               classname = exClassName;
               break;
