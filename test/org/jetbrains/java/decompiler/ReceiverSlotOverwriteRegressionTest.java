@@ -1,51 +1,22 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-public class ReceiverSlotOverwriteRegressionTest {
-  private DecompilerTestFixture fixture;
-
-  @BeforeEach
-  public void setUp() throws IOException {
-    fixture = new DecompilerTestFixture();
-    fixture.setUp();
-  }
-
-  @AfterEach
-  public void tearDown() {
-    fixture.tearDown();
-    fixture = null;
-  }
-
+public class ReceiverSlotOverwriteRegressionTest extends DecompileRegressionTestBase {
   @Test
   public void testReceiverSlotOverwriteDoesNotDecompileToThisAssignment() throws IOException {
-    Path srcRoot = fixture.getTempDir().resolve("compile-src");
-    Path outRoot = fixture.getTempDir().resolve("compile-out");
-    Path source = srcRoot.resolve("pkg/TestReceiverSlotOverwrite.java");
-    Files.createDirectories(source.getParent());
-
-    Files.writeString(source, """
+    Path source = writeSource("pkg/TestReceiverSlotOverwrite.java", """
 package pkg;
 
 public class TestReceiverSlotOverwrite {
@@ -55,33 +26,23 @@ public class TestReceiverSlotOverwrite {
     return tmp;
   }
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    compileJava8NoDebug(List.of(source), outRoot);
+    compileJava8NoDebug(source, outRoot());
 
-    Path classFile = outRoot.resolve("pkg/TestReceiverSlotOverwrite.class");
-    patchMethodLocal1ToLocal0(classFile, "rewrite", "()Lpkg/TestReceiverSlotOverwrite;");
+    Path classFile = outRoot().resolve("pkg/TestReceiverSlotOverwrite.class");
+    patchMethodLocalToLocal0(classFile, "rewrite", "()Lpkg/TestReceiverSlotOverwrite;", 1);
 
-    ConsoleDecompiler decompiler = fixture.getDecompiler();
-    decompiler.addSource(outRoot.toFile());
-    decompiler.decompileContext();
-
-    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverSlotOverwrite.java");
-    String content = DecompilerTestFixture.getContent(decompiledFile);
-
+    String content = decompileDirectory(outRoot(), "pkg/TestReceiverSlotOverwrite.java");
     assertFalse(content.contains("this ="), content);
 
-    compileJava8NoDebug(List.of(decompiledFile), fixture.getTempDir().resolve("recompiled-out"));
+    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverSlotOverwrite.java");
+    compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out"));
   }
 
   @Test
   public void testNoOpReceiverStoreIsRemovedInsteadOfPrintedAsThisAssignment() throws IOException {
-    Path srcRoot = fixture.getTempDir().resolve("compile-src-noop");
-    Path outRoot = fixture.getTempDir().resolve("compile-out-noop");
-    Path source = srcRoot.resolve("pkg/TestReceiverNoopStore.java");
-    Files.createDirectories(source.getParent());
-
-    Files.writeString(source, """
+    Path source = writeSource("pkg/TestReceiverNoopStore.java", """
 package pkg;
 
 public class TestReceiverNoopStore {
@@ -90,34 +51,25 @@ public class TestReceiverNoopStore {
     return tmp;
   }
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    compileJava8NoDebug(List.of(source), outRoot);
+    Path outDir = fixture.getTempDir().resolve("compile-out-noop");
+    compileJava8NoDebug(source, outDir);
 
-    Path classFile = outRoot.resolve("pkg/TestReceiverNoopStore.class");
-    patchMethodLocal1ToLocal0(classFile, "identity", "()Lpkg/TestReceiverNoopStore;");
+    Path classFile = outDir.resolve("pkg/TestReceiverNoopStore.class");
+    patchMethodLocalToLocal0(classFile, "identity", "()Lpkg/TestReceiverNoopStore;", 1);
 
-    ConsoleDecompiler decompiler = fixture.getDecompiler();
-    decompiler.addSource(outRoot.toFile());
-    decompiler.decompileContext();
-
-    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverNoopStore.java");
-    String content = DecompilerTestFixture.getContent(decompiledFile);
-
+    String content = decompileDirectory(outDir, "pkg/TestReceiverNoopStore.java");
     assertFalse(content.contains("this ="), content);
     assertTrue(content.contains("return this;"), content);
 
-    compileJava8NoDebug(List.of(decompiledFile), fixture.getTempDir().resolve("recompiled-out-noop"));
+    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverNoopStore.java");
+    compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out-noop"));
   }
 
   @Test
   public void testReceiverStoreWithCompanionStackValueDoesNotRenderAsThisAssignment() throws IOException {
-    Path srcRoot = fixture.getTempDir().resolve("compile-src-stack");
-    Path outRoot = fixture.getTempDir().resolve("compile-out-stack");
-    Path source = srcRoot.resolve("pkg/TestReceiverStackStore.java");
-    Files.createDirectories(source.getParent());
-
-    Files.writeString(source, """
+    Path source = writeSource("pkg/TestReceiverStackStore.java", """
 package pkg;
 
 public class TestReceiverStackStore {
@@ -139,31 +91,30 @@ public class TestReceiverStackStore {
     return arr[0];
   }
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    compileJava8NoDebug(List.of(source), outRoot);
+    Path outDir = fixture.getTempDir().resolve("compile-out-stack");
+    compileJava8NoDebug(source, outDir);
 
-    Path classFile = outRoot.resolve("pkg/TestReceiverStackStore.class");
+    Path classFile = outDir.resolve("pkg/TestReceiverStackStore.class");
     patchMethodLocalToLocal0(classFile, "probe", "()Lpkg/TestReceiverStackStore;", 2);
 
-    ConsoleDecompiler decompiler = fixture.getDecompiler();
-    decompiler.addSource(outRoot.toFile());
-    decompiler.decompileContext();
-
-    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverStackStore.java");
-    String content = DecompilerTestFixture.getContent(decompiledFile);
-
+    String content = decompileDirectory(outDir, "pkg/TestReceiverStackStore.java");
     assertFalse(content.contains("this ="), content);
 
-    compileJava8NoDebug(List.of(decompiledFile), fixture.getTempDir().resolve("recompiled-out-stack"));
+    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverStackStore.java");
+    compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out-stack"));
   }
 
-  private static void patchMethodLocal1ToLocal0(Path classFile, String targetMethodName, String targetDescriptor) throws IOException {
-    patchMethodLocalToLocal0(classFile, targetMethodName, targetDescriptor, 1);
-  }
+  // --- bytecode patching ---
 
   private static void patchMethodLocalToLocal0(Path classFile, String targetMethodName, String targetDescriptor, int localIndex) throws IOException {
     patchMethodCode(classFile, targetMethodName, targetDescriptor, (classBytes, codeStart, codeLength) -> patchCodeAttributeLocalToLocal0(classBytes, codeStart, codeLength, localIndex));
+  }
+
+  @FunctionalInterface
+  private interface CodeAttributePatcher {
+    boolean patch(byte[] classBytes, int codeStart, int codeLength);
   }
 
   private static void patchMethodCode(
@@ -289,11 +240,6 @@ public class TestReceiverStackStore {
     return replacements > 0;
   }
 
-  @FunctionalInterface
-  private interface CodeAttributePatcher {
-    boolean patch(byte[] classBytes, int codeStart, int codeLength);
-  }
-
   private static void skipMember(ByteBuffer buffer) {
     buffer.position(buffer.position() + 6); // access, name, descriptor
     int attributesCount = Short.toUnsignedInt(buffer.getShort());
@@ -301,24 +247,6 @@ public class TestReceiverStackStore {
       buffer.getShort(); // name
       int length = buffer.getInt();
       buffer.position(buffer.position() + length);
-    }
-  }
-
-  private static void compileJava8NoDebug(List<Path> sourceFiles, Path outputDir) throws IOException {
-    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    assertNotNull(compiler, "JDK compiler is required to run this test");
-    Files.createDirectories(outputDir);
-
-    try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, Locale.ROOT, StandardCharsets.UTF_8)) {
-      Iterable<? extends JavaFileObject> sources = fileManager.getJavaFileObjectsFromPaths(sourceFiles);
-      List<String> options = List.of(
-        "-g:none",
-        "-source", "8",
-        "-target", "8",
-        "-d", outputDir.toString()
-      );
-      Boolean success = compiler.getTask(null, fileManager, null, options, null, sources).call();
-      assertTrue(Boolean.TRUE.equals(success), "javac failed for " + sourceFiles);
     }
   }
 }

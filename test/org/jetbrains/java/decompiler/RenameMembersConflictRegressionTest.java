@@ -1,67 +1,34 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import javax.tools.JavaCompiler;
-import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
-import javax.tools.ToolProvider;
-import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class RenameMembersConflictRegressionTest {
-  private DecompilerTestFixture fixture;
-
-  @BeforeEach
-  public void setUp() throws IOException {
-    fixture = new DecompilerTestFixture();
-    fixture.setUp(IFernflowerPreferences.RENAME_ENTITIES, "1");
-  }
-
-  @AfterEach
-  public void tearDown() {
-    fixture.tearDown();
-    fixture = null;
+public class RenameMembersConflictRegressionTest extends DecompileRegressionTestBase {
+  @Override
+  protected Object[] fixtureOptions() {
+    return new Object[]{IFernflowerPreferences.RENAME_ENTITIES, "1"};
   }
 
   @Test
   public void testRenameMembersConflictResolutionKeepsRunAndValidConstructorSyntax() throws IOException {
-    Path srcRoot = fixture.getTempDir().resolve("compile-src");
-    Path outRoot = fixture.getTempDir().resolve("compile-out");
-    Files.createDirectories(srcRoot.resolve("ren"));
-
-    Path hasCoords = srcRoot.resolve("ren/HasCoords.java");
-    Path baseUnit = srcRoot.resolve("ren/BaseUnit.java");
-    Path unitRunner = srcRoot.resolve("ren/UnitRunner.java");
-    Path factory = srcRoot.resolve("ren/Factory.java");
-
-    Files.writeString(hasCoords, """
+    Path hasCoords = writeSource("ren/HasCoords.java", """
 package ren;
 
 public interface HasCoords {
   int n = 1;
   int o = 2;
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    Files.writeString(baseUnit, """
+    Path baseUnit = writeSource("ren/BaseUnit.java", """
 package ren;
 
 public abstract class BaseUnit {
@@ -69,9 +36,9 @@ public abstract class BaseUnit {
   protected int o;
   protected int p;
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    Files.writeString(unitRunner, """
+    Path unitRunner = writeSource("ren/UnitRunner.java", """
 package ren;
 
 public class UnitRunner extends BaseUnit implements HasCoords, Runnable {
@@ -94,9 +61,9 @@ public class UnitRunner extends BaseUnit implements HasCoords, Runnable {
     return this.p + delta;
   }
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    Files.writeString(factory, """
+    Path factory = writeSource("ren/Factory.java", """
 package ren;
 
 public final class Factory {
@@ -107,15 +74,11 @@ public final class Factory {
     return new UnitRunner(1, 2);
   }
 }
-""", StandardCharsets.UTF_8);
+""");
 
-    compileJava8NoDebug(List.of(hasCoords, baseUnit, unitRunner, factory), outRoot);
+    compileJava8NoDebug(List.of(hasCoords, baseUnit, unitRunner, factory), outRoot());
 
-    ConsoleDecompiler decompiler = fixture.getDecompiler();
-    decompiler.addSource(outRoot.toFile());
-    decompiler.decompileContext();
-
-    String ifaceContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("ren/HasCoords.java"));
+    String ifaceContent = decompileDirectory(outRoot(), "ren/HasCoords.java");
     String unitContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("ren/UnitRunner.java"));
     String factoryContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("ren/Factory.java"));
 
@@ -133,33 +96,6 @@ public final class Factory {
     assertTrue(factoryContent.contains("new UnitRunner(1, 2)"), factoryContent);
     assertFalse(Pattern.compile("new\\s+UnitRunner\\s*;").matcher(factoryContent).find(), factoryContent);
 
-    compileJava8NoDebug(listJavaSources(fixture.getTargetDir()), fixture.getTempDir().resolve("recompiled-out"));
-  }
-
-  private static List<Path> listJavaSources(Path root) throws IOException {
-    List<Path> sources = new ArrayList<>();
-    try (Stream<Path> stream = Files.walk(root)) {
-      stream.filter(path -> path.getFileName().toString().endsWith(".java")).forEach(sources::add);
-    }
-    return sources;
-  }
-
-  private static void compileJava8NoDebug(List<Path> sourceFiles, Path outputDir) throws IOException {
-    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    assertNotNull(compiler, "JDK compiler is required to run this test");
-    Files.createDirectories(outputDir);
-
-    List<File> sourceFileList = sourceFiles.stream().map(Path::toFile).collect(Collectors.toList());
-    try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, Locale.ROOT, StandardCharsets.UTF_8)) {
-      Iterable<? extends JavaFileObject> sources = fileManager.getJavaFileObjectsFromFiles(sourceFileList);
-      List<String> options = List.of(
-        "-g:none",
-        "-source", "8",
-        "-target", "8",
-        "-d", outputDir.toString()
-      );
-      Boolean success = compiler.getTask(null, fileManager, null, options, null, sources).call();
-      assertTrue(Boolean.TRUE.equals(success), "javac failed for " + sourceFileList);
-    }
+    recompile();
   }
 }
