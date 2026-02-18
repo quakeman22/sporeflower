@@ -694,12 +694,16 @@ public class VarDefinitionHelper {
           VarExprent var = (VarExprent)exp;
           Integer index = varproc.getVarOriginalIndex(var.getIndex());
           if (index != null) {
-            if (this_vars.containsKey(index)) {
+            VarVersionPair current = new VarVersionPair(var);
+            VarVersionPair existing = this_vars.get(index);
+
+            if (existing != null && canMergeWithExistingVar(index, current, existing)) {
               stat.getVarDefinitions().remove(x);
-              return new VPPEntry(var, this_vars.get(index));
+              return new VPPEntry(var, existing);
             }
-            this_vars.put(index, new VarVersionPair(var));
-            leaked.put(index, new VarVersionPair(var));
+
+            this_vars.put(index, current);
+            leaked.put(index, current);
           } else {
             RootStatement root = stat.getTopParent();
 
@@ -928,21 +932,40 @@ public class VarDefinitionHelper {
     }
 
     Integer index = varproc.getVarOriginalIndex(var.getIndex());
-    VarVersionPair new_ = this_vars.get(index);
-    if (new_ != null) {
+    if (index != null) {
       VarVersionPair old = new VarVersionPair(var);
-      VarVersionPair deny = denylist.get(old);
-      if (deny == null || !deny.equals(new_)) {
-        return new VPPEntry(var, this_vars.get(index));
+      VarVersionPair new_ = this_vars.get(index);
+      if (new_ != null && canMergeWithExistingVar(index, old, new_)) {
+        VarVersionPair deny = denylist.get(old);
+        if (deny == null || !deny.equals(new_)) {
+          return new VPPEntry(var, new_);
+        }
       }
-    }
-    this_vars.put(index, new VarVersionPair(var));
 
-    if (leaked != null) {
-      leaked.put(index, new VarVersionPair(var));
+      this_vars.put(index, old);
+      if (leaked != null) {
+        leaked.put(index, old);
+      }
     }
 
     return null;
+  }
+
+  private boolean canMergeWithExistingVar(int originalIndex, VarVersionPair current, VarVersionPair existing) {
+    if (!isOverwrittenReceiverSlot(originalIndex, current, existing)) {
+      return true;
+    }
+
+    // Slot 0 can be reassigned in obfuscated bytecode. Keep those locals distinct from the Java receiver.
+    return current.equals(existing);
+  }
+
+  private boolean isOverwrittenReceiverSlot(int originalIndex, VarVersionPair current, VarVersionPair existing) {
+    return originalIndex == 0
+      && !mt.hasModifier(CodeConstants.ACC_STATIC)
+      && existing.var == 0
+      && existing.version == 0
+      && (current.var != 0 || current.version != 0);
   }
 
   private boolean remapVar(Statement stat, VarVersionPair from, VarVersionPair to) {
