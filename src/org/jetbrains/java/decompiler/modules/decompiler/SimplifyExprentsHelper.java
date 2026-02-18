@@ -132,8 +132,8 @@ public class SimplifyExprentsHelper {
         continue;
       }
 
-      // trivial assignment of a stack variable
-      if (isTrivialStackAssignment(current)) {
+      // trivial assignment of a variable to itself
+      if (isTrivialSelfAssignment(current)) {
         list.remove(index);
         res = true;
         continue;
@@ -438,16 +438,17 @@ public class SimplifyExprentsHelper {
   /*
    * remove assignments of the form:
    * var10001 = var10001;
+   * var1 = var1;
+   * this = this;
    */
-  private static boolean isTrivialStackAssignment(Exprent first) {
-    if (first instanceof AssignmentExprent) {
-      AssignmentExprent asf = (AssignmentExprent) first;
-
-      if (isStackVar(asf.getLeft()) && isStackVar(asf.getRight())) {
-        VarExprent left = (VarExprent) asf.getLeft();
-        VarExprent right = (VarExprent) asf.getRight();
-        return left.getIndex() == right.getIndex();
-      }
+  private static boolean isTrivialSelfAssignment(Exprent first) {
+    if (first instanceof AssignmentExprent asf
+      && asf.getCondType() == null
+      && asf.getLeft() instanceof VarExprent left
+      && asf.getRight() instanceof VarExprent right
+      && !left.isDefinition()
+      && left.getIndex() == right.getIndex()) {
+      return true;
     }
 
     return false;

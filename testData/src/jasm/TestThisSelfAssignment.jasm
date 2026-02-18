@@ -1,0 +1,33 @@
+package pkg;
+
+super public class TestThisSelfAssignment
+  version 47:0
+{
+
+public Field done:"Z";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method spin:"(I)V"
+  stack 2 locals 2
+{
+L0:
+  aload_0;
+  getfield Field done:"Z";
+  ifne L1;
+  aload_0;
+  iload_1;
+  istore_1;
+  astore_0;
+  goto L0;
+L1:
+  return;
+}
+
+} // end Class TestThisSelfAssignment
