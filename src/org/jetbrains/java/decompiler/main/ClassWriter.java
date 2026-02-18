@@ -420,6 +420,7 @@ public class ClassWriter implements StatementWriter {
 
       // fields
       if (methodToDecompile.isEmpty()) {
+        Set<String> referencedFieldKeys = collectReferencedFieldKeysInVisibleMethods(node, wrapper, cl, methodToDecompile);
         List<StructRecordComponent> components = cl.getRecordComponents();
 
         List<StructField> enumFields = new ArrayList<>();
@@ -450,8 +451,15 @@ public class ClassWriter implements StatementWriter {
         }
 
         for (StructField fd : nonEnumFields) {
-          boolean hide = fd.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC) ||
-            wrapper.getHiddenMembers().contains(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));
+          String fieldKey = InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor());
+          boolean referencedByVisibleMethod = referencedFieldKeys.contains(fieldKey);
+          // Some J2ME/obfuscated classes lose nested-class metadata, so synthetic captures
+          // are not resugared and remain as direct field accesses in emitted methods.
+          // Never hide a field that visible code still references.
+          boolean hide = !referencedByVisibleMethod && (
+            fd.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC) ||
+              wrapper.getHiddenMembers().contains(fieldKey)
+          );
           if (hide) continue;
 
           if (components != null && fd.getAccessFlags() == (CodeConstants.ACC_FINAL | CodeConstants.ACC_PRIVATE) &&
@@ -475,15 +483,7 @@ public class ClassWriter implements StatementWriter {
       VBStyleCollection<StructMethod, String> methods = cl.getMethods();
       for (int i = 0; i < methods.size(); i++) {
         StructMethod mt = methods.get(i);
-        boolean hide;
-        if (methodToDecompile.isEmpty() || (node.type != ClassNode.Type.ROOT && node.type != ClassNode.Type.MEMBER)) {
-          hide = mt.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC) ||
-                 mt.hasModifier(CodeConstants.ACC_BRIDGE) && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_BRIDGE) ||
-                 wrapper.getHiddenMembers().contains(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
-        } else {
-          hide = !methodToDecompile.equals(cl.qualifiedName + "." + mt.getName() + mt.getDescriptor()) &&
-                 (node.type != ClassNode.Type.ROOT || !methodToDecompile.equals(mt.getName() + mt.getDescriptor()));
-        }
+        boolean hide = shouldHideMethod(node, wrapper, cl, mt, methodToDecompile);
         if (hide) continue;
 
         TextBuffer methodBuffer = new TextBuffer();
@@ -836,6 +836,72 @@ public class ClassWriter implements StatementWriter {
       }
     }
     return false;
+  }
+
+  private static boolean shouldHideMethod(
+    ClassNode node,
+    ClassWrapper wrapper,
+    StructClass cl,
+    StructMethod mt,
+    String methodToDecompile
+  ) {
+    if (methodToDecompile.isEmpty() || (node.type != ClassNode.Type.ROOT && node.type != ClassNode.Type.MEMBER)) {
+      return mt.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC) ||
+        mt.hasModifier(CodeConstants.ACC_BRIDGE) && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_BRIDGE) ||
+        wrapper.getHiddenMembers().contains(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+    }
+
+    return !methodToDecompile.equals(cl.qualifiedName + "." + mt.getName() + mt.getDescriptor()) &&
+      (node.type != ClassNode.Type.ROOT || !methodToDecompile.equals(mt.getName() + mt.getDescriptor()));
+  }
+
+  private static Set<String> collectReferencedFieldKeysInVisibleMethods(
+    ClassNode node,
+    ClassWrapper wrapper,
+    StructClass cl,
+    String methodToDecompile
+  ) {
+    Set<String> referencedFieldKeys = new HashSet<>();
+
+    VBStyleCollection<StructMethod, String> methods = cl.getMethods();
+    for (int i = 0; i < methods.size(); i++) {
+      StructMethod mt = methods.get(i);
+      if (shouldHideMethod(node, wrapper, cl, mt, methodToDecompile)) {
+        continue;
+      }
+
+      MethodWrapper methodWrapper = wrapper.getMethodWrapper(mt.getName(), mt.getDescriptor());
+      if (methodWrapper == null || methodWrapper.root == null) {
+        continue;
+      }
+
+      collectReferencedFieldKeysFromStatement(methodWrapper.root.getFirst(), cl, referencedFieldKeys);
+    }
+
+    return referencedFieldKeys;
+  }
+
+  private static void collectReferencedFieldKeysFromStatement(
+    Statement statement,
+    StructClass cl,
+    Set<String> referencedFieldKeys
+  ) {
+    if (statement == null) {
+      return;
+    }
+
+    List<Exprent> exprents = statement.getExprents() != null ? statement.getExprents() : statement.getStatExprents();
+    for (Exprent exprent : exprents) {
+      for (Exprent nested : exprent.getAllExprents(true, true)) {
+        if (nested instanceof FieldExprent fieldExprent && cl.qualifiedName.equals(fieldExprent.getClassname())) {
+          referencedFieldKeys.add(InterpreterUtil.makeUniqueKey(fieldExprent.getName(), fieldExprent.getDescriptor().descriptorString));
+        }
+      }
+    }
+
+    for (Statement child : new ArrayList<>(statement.getStats())) {
+      collectReferencedFieldKeysFromStatement(child, cl, referencedFieldKeys);
+    }
   }
 
   private void writeField(TextBuffer buffer, int indent, StructField fd, ClassWrapper wrapper) {

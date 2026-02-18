@@ -140,8 +140,8 @@ public final class CheckedExceptionAnalyzer {
     StructClass currentClass = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS);
     ClassWrapper currentWrapper = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_WRAPPER);
 
-    for (Exprent exprent : exprents) {
-      for (Exprent nested : exprent.getAllExprents(true, true)) {
+    for (Exprent exprent : snapshotExprents(exprents)) {
+      for (Exprent nested : snapshotNestedExprents(exprent)) {
         if (nested instanceof InvocationExprent invocation) {
           if (invocationResolver.invocationThrows(invocation, exceptionType, currentClass, currentWrapper)
             && !CheckedExceptionSupport.isCaughtByActiveCatches(exceptionType, activeCatchTypes)) {
@@ -204,8 +204,10 @@ public final class CheckedExceptionAnalyzer {
       return;
     }
 
-    for (Exprent exprent : exprents) {
-      List<Exprent> nestedExprents = exprent.getAllExprents(true, true);
+    // Re-entrant checked-throws inference can rewrite exprent lists while we iterate.
+    // Always traverse a stable snapshot.
+    for (Exprent exprent : snapshotExprents(exprents)) {
+      List<Exprent> nestedExprents = snapshotNestedExprents(exprent);
       for (Exprent nested : nestedExprents) {
         if (nested instanceof InvocationExprent invocation) {
           for (String thrownException : invocationResolver.getInvocationCheckedExceptions(invocation, ownerClass, ownerWrapper)) {
@@ -346,8 +348,8 @@ public final class CheckedExceptionAnalyzer {
       return;
     }
 
-    for (Exprent exprent : exprents) {
-      for (Exprent nested : exprent.getAllExprents(true, true)) {
+    for (Exprent exprent : snapshotExprents(exprents)) {
+      for (Exprent nested : snapshotNestedExprents(exprent)) {
         if (nested instanceof InvocationExprent invocation && isSameClassInvocation(invocation, ownerClass, targetMethod)) {
           for (String catchType : activeCatchTypes) {
             caughtTypes.add(catchType);
@@ -372,6 +374,14 @@ public final class CheckedExceptionAnalyzer {
 
     String invocationClass = invocation.getClassname();
     return invocationClass != null && invocationClass.equals(ownerClass.qualifiedName);
+  }
+
+  private static List<Exprent> snapshotExprents(List<Exprent> exprents) {
+    return new ArrayList<>(exprents);
+  }
+
+  private static List<Exprent> snapshotNestedExprents(Exprent exprent) {
+    return new ArrayList<>(exprent.getAllExprents(true, true));
   }
 
   private static String selectFallbackCatchType(List<String> previousCatchTypes, List<String> followingCatchTypes) {

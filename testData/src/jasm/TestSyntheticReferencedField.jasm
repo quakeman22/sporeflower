@@ -1,0 +1,37 @@
+package pkg;
+
+super public class TestSyntheticReferencedField implements java/lang/Runnable
+  version 47:0
+{
+
+final synthetic Field this$0:"Ljava/lang/Object;";
+final synthetic Field val$currFile:"Ljava/lang/String;";
+
+public Method "<init>":"(Ljava/lang/Object;Ljava/lang/String;)V"
+  stack 2 locals 3
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  aload_1;
+  putfield Field this$0:"Ljava/lang/Object;";
+  aload_0;
+  aload_2;
+  putfield Field val$currFile:"Ljava/lang/String;";
+  return;
+}
+
+public Method run:"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  getfield Field this$0:"Ljava/lang/Object;";
+  pop;
+  aload_0;
+  getfield Field val$currFile:"Ljava/lang/String;";
+  invokevirtual Method java/lang/String.length:"()I";
+  pop;
+  return;
+}
+
+} // end Class TestSyntheticReferencedField

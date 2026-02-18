@@ -36,7 +36,7 @@ final class CheckedStatementWalker {
 
     if (statement instanceof CatchStatement catchStatement) {
       List<String> tryCatchTypes = mergeCatchTypes(activeCatchTypes, catchStatement.getExctStrings());
-      if (exprentVisitor.visit(catchStatement.getResources(), tryCatchTypes)) {
+      if (exprentVisitor.visit(snapshotExprents(catchStatement.getResources()), tryCatchTypes)) {
         return true;
       }
       if (walk(catchStatement.getFirst(), tryCatchTypes, catchAllPolicy, exprentVisitor)) {
@@ -65,6 +65,7 @@ final class CheckedStatementWalker {
     }
 
     List<Exprent> exprents = statement.getExprents() != null ? statement.getExprents() : statement.getStatExprents();
+    exprents = snapshotExprents(exprents);
     if (exprentVisitor.visit(exprents, activeCatchTypes)) {
       return true;
     }
@@ -90,5 +91,12 @@ final class CheckedStatementWalker {
       merged.addAll(catchTypes);
     }
     return merged;
+  }
+
+  private static List<Exprent> snapshotExprents(List<Exprent> exprents) {
+    if (exprents == null || exprents.isEmpty()) {
+      return exprents;
+    }
+    return new ArrayList<>(exprents);
   }
 }
