@@ -13,6 +13,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
+import org.jetbrains.java.decompiler.util.InterpreterUtil;
 
 import java.util.*;
 
@@ -270,6 +271,14 @@ public final class SecondaryFunctionsHelper {
         List<Exprent> lstOperands = fexpr.getLstOperands();
 
         switch (fexpr.getFuncType()) {
+          case BOOLEAN_AND:
+          case BOOLEAN_OR: {
+            Exprent simplified = simplifyRedundantComparisonChecks(fexpr);
+            if (simplified != null) {
+              return simplified;
+            }
+            break;
+          }
           case XOR:
             for (int i = 0; i < 2; i++) {
               Exprent operand = lstOperands.get(i);
@@ -569,6 +578,147 @@ public final class SecondaryFunctionsHelper {
 
   private static boolean isSuperSimple(Exprent exprent) {
     return exprent.type == Exprent.Type.VAR || exprent.type == Exprent.Type.CONST;
+  }
+
+  private static Exprent simplifyRedundantComparisonChecks(FunctionExprent root) {
+    FunctionType booleanType = root.getFuncType();
+    if (booleanType != FunctionType.BOOLEAN_AND && booleanType != FunctionType.BOOLEAN_OR) {
+      return null;
+    }
+
+    List<Exprent> terms = new ArrayList<>();
+    collectBooleanTerms(root, booleanType, terms);
+
+    boolean[] remove = new boolean[terms.size()];
+    boolean changed = false;
+
+    for (int i = 0; i < terms.size(); i++) {
+      if (remove[i]) {
+        continue;
+      }
+
+      ComparisonDescriptor left = toComparisonDescriptor(terms.get(i));
+      if (left == null) {
+        continue;
+      }
+
+      for (int j = i + 1; j < terms.size(); j++) {
+        if (remove[j]) {
+          continue;
+        }
+
+        ComparisonDescriptor right = toComparisonDescriptor(terms.get(j));
+        if (right == null || !left.hasSameSubject(right) || left.hasSameConstant(right)) {
+          continue;
+        }
+
+        if (booleanType == FunctionType.BOOLEAN_AND) {
+          if (left.functionType == FunctionType.EQ && right.functionType == FunctionType.NE) {
+            remove[j] = true;
+            changed = true;
+          } else if (left.functionType == FunctionType.NE && right.functionType == FunctionType.EQ) {
+            remove[i] = true;
+            changed = true;
+            break;
+          }
+        } else {
+          if (left.functionType == FunctionType.NE && right.functionType == FunctionType.EQ) {
+            remove[j] = true;
+            changed = true;
+          } else if (left.functionType == FunctionType.EQ && right.functionType == FunctionType.NE) {
+            remove[i] = true;
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!changed) {
+      return null;
+    }
+
+    List<Exprent> filtered = new ArrayList<>(terms.size());
+    for (int i = 0; i < terms.size(); i++) {
+      if (!remove[i]) {
+        filtered.add(terms.get(i));
+      }
+    }
+
+    if (filtered.isEmpty()) {
+      return null;
+    }
+
+    if (filtered.size() == 1) {
+      return filtered.get(0);
+    }
+
+    Exprent simplified = filtered.get(0);
+    for (int i = 1; i < filtered.size(); i++) {
+      simplified = new FunctionExprent(booleanType, Arrays.asList(simplified, filtered.get(i)), root.bytecode);
+    }
+    return simplified;
+  }
+
+  private static void collectBooleanTerms(Exprent exprent, FunctionType booleanType, List<Exprent> terms) {
+    if (exprent instanceof FunctionExprent function && function.getFuncType() == booleanType) {
+      for (Exprent operand : function.getLstOperands()) {
+        collectBooleanTerms(operand, booleanType, terms);
+      }
+      return;
+    }
+
+    terms.add(exprent);
+  }
+
+  private static ComparisonDescriptor toComparisonDescriptor(Exprent exprent) {
+    if ((exprent.getExprentUse() & Exprent.SIDE_EFFECTS_FREE) == 0) {
+      return null;
+    }
+
+    if (!(exprent instanceof FunctionExprent function)) {
+      return null;
+    }
+
+    FunctionType functionType = function.getFuncType();
+    if (functionType != FunctionType.EQ && functionType != FunctionType.NE) {
+      return null;
+    }
+
+    List<Exprent> operands = function.getLstOperands();
+    Exprent left = operands.get(0);
+    Exprent right = operands.get(1);
+
+    if (left instanceof ConstExprent && !(right instanceof ConstExprent)) {
+      return new ComparisonDescriptor(functionType, right, (ConstExprent)left);
+    }
+
+    if (right instanceof ConstExprent && !(left instanceof ConstExprent)) {
+      return new ComparisonDescriptor(functionType, left, (ConstExprent)right);
+    }
+
+    return null;
+  }
+
+  private static final class ComparisonDescriptor {
+    private final FunctionType functionType;
+    private final Exprent subject;
+    private final ConstExprent constant;
+
+    private ComparisonDescriptor(FunctionType functionType, Exprent subject, ConstExprent constant) {
+      this.functionType = functionType;
+      this.subject = subject;
+      this.constant = constant;
+    }
+
+    private boolean hasSameSubject(ComparisonDescriptor other) {
+      return InterpreterUtil.equalObjects(subject, other.subject);
+    }
+
+    private boolean hasSameConstant(ComparisonDescriptor other) {
+      return InterpreterUtil.equalObjects(constant.getValue(), other.constant.getValue()) &&
+             InterpreterUtil.equalObjects(constant.getExprType(), other.constant.getExprType());
+    }
   }
 
   private static boolean hasPattern(Exprent exprent) {
