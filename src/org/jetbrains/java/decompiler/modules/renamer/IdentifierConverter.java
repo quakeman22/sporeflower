@@ -322,22 +322,23 @@ public class IdentifierConverter implements NewClassNameBuilder {
     }
 
     Map<String, String> inheritedNames = new LinkedHashMap<>(names);
-    Set<String> inheritedMethodNames = collectInheritedMethodNames(inheritedNames);
+    Set<String> inheritedMethodSignatures = collectInheritedMethodSignatures(inheritedNames);
 
     // methods
     VBStyleCollection<StructMethod, String> methods = cl.getMethods();
-    Set<String> assignedMethodNames = new HashSet<>();
+    Set<String> assignedMethodSignatures = new HashSet<>();
     for (int index : buildMethodProcessingOrder(methods, inheritedNames)) {
       StructMethod mt = methods.get(index);
       String key = methods.getKey(index);
       boolean isPrivate = mt.hasModifier(CodeConstants.ACC_PRIVATE);
+      String methodDescriptor = buildNewDescriptor(false, mt.getDescriptor());
 
       String oldName = mt.getName();
       if (CodeConstants.INIT_NAME.equals(oldName) || CodeConstants.CLINIT_NAME.equals(oldName)) {
         if (!isPrivate) {
           names.put(key, oldName);
         }
-        assignedMethodNames.add(oldName);
+        assignedMethodSignatures.add(methodSignature(oldName, methodDescriptor));
         continue;
       }
 
@@ -346,20 +347,30 @@ public class IdentifierConverter implements NewClassNameBuilder {
         if (!isPrivate) {
           names.put(key, oldName);
         }
-        assignedMethodNames.add(oldName);
+        assignedMethodSignatures.add(methodSignature(oldName, methodDescriptor));
         continue;
       }
 
       String inheritedName = isPrivate ? null : inheritedNames.get(key);
+      String inheritedSignature = inheritedName == null ? null : methodSignature(inheritedName, methodDescriptor);
       boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, oldName, mt.getDescriptor());
       String newName = inheritedName != null ? inheritedName : oldName;
 
-      while (renameByPolicy || hasMethodNameConflict(newName, assignedMethodNames, inheritedMethodNames, inheritedName)) {
-        newName = nextMethodName(classOldFullName, mt, renameByPolicy, assignedMethodNames, inheritedMethodNames, inheritedName);
+      while (renameByPolicy || hasMethodNameConflict(newName, methodDescriptor, assignedMethodSignatures, inheritedMethodSignatures, inheritedSignature)) {
+        newName =
+          nextMethodName(
+            classOldFullName,
+            mt,
+            methodDescriptor,
+            renameByPolicy,
+            assignedMethodSignatures,
+            inheritedMethodSignatures,
+            inheritedSignature
+          );
         renameByPolicy = false;
       }
 
-      assignedMethodNames.add(newName);
+      assignedMethodSignatures.add(methodSignature(newName, methodDescriptor));
 
       if (!isPrivate) {
         names.put(key, newName);
@@ -432,24 +443,33 @@ public class IdentifierConverter implements NewClassNameBuilder {
     return inherited;
   }
 
-  private static Set<String> collectInheritedMethodNames(Map<String, String> inheritedNames) {
-    return new HashSet<>(inheritedNames.values());
+  private Set<String> collectInheritedMethodSignatures(Map<String, String> inheritedNames) {
+    Set<String> signatures = new HashSet<>();
+    for (Map.Entry<String, String> entry : inheritedNames.entrySet()) {
+      String descriptor = descriptorFromMethodKey(entry.getKey());
+      if (descriptor == null) {
+        continue;
+      }
+      signatures.add(methodSignature(entry.getValue(), buildNewDescriptor(false, descriptor)));
+    }
+    return signatures;
   }
 
   private String nextMethodName(
     String className,
     StructMethod method,
+    String methodDescriptor,
     boolean useHelper,
-    Set<String> assignedMethodNames,
-    Set<String> inheritedMethodNames,
-    String inheritedName
+    Set<String> assignedMethodSignatures,
+    Set<String> inheritedMethodSignatures,
+    String inheritedSignature
   ) {
     Set<String> attempts = new HashSet<>();
     boolean usePolicyRenamer = useHelper;
 
     while (true) {
       String candidate = generateMethodNameCandidate(className, method, usePolicyRenamer);
-      if (!hasMethodNameConflict(candidate, assignedMethodNames, inheritedMethodNames, inheritedName)) {
+      if (!hasMethodNameConflict(candidate, methodDescriptor, assignedMethodSignatures, inheritedMethodSignatures, inheritedSignature)) {
         return candidate;
       }
 
@@ -497,23 +517,39 @@ public class IdentifierConverter implements NewClassNameBuilder {
 
   private static boolean hasMethodNameConflict(
     String candidateName,
-    Set<String> assignedMethodNames,
-    Set<String> inheritedMethodNames,
-    String inheritedName
+    String methodDescriptor,
+    Set<String> assignedMethodSignatures,
+    Set<String> inheritedMethodSignatures,
+    String inheritedSignature
   ) {
-    if (assignedMethodNames.contains(candidateName)) {
+    String candidateSignature = methodSignature(candidateName, methodDescriptor);
+    if (assignedMethodSignatures.contains(candidateSignature)) {
       return true;
     }
 
-    if (!inheritedMethodNames.contains(candidateName)) {
+    if (!inheritedMethodSignatures.contains(candidateSignature)) {
       return false;
     }
 
-    if (inheritedName == null) {
+    if (inheritedSignature == null) {
       return true;
     }
 
-    return !candidateName.equals(inheritedName);
+    return !candidateSignature.equals(inheritedSignature);
+  }
+
+  private static String descriptorFromMethodKey(String key) {
+    int split = key.indexOf(' ');
+    if (split < 0 || split + 1 >= key.length()) {
+      return null;
+    }
+    return key.substring(split + 1);
+  }
+
+  private static String methodSignature(String name, String descriptor) {
+    int end = descriptor.indexOf(')');
+    String parameterDescriptor = end >= 0 ? descriptor.substring(0, end + 1) : descriptor;
+    return name + " " + parameterDescriptor;
   }
 
   private void resolveFieldNameConflicts() {
