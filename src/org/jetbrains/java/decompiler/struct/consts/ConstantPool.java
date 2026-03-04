@@ -5,6 +5,7 @@ import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.struct.StructClass;
+import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.NewClassNameBuilder;
@@ -186,6 +187,11 @@ public class ConstantPool implements NewClassNameBuilder {
     }
 
     VarType vt = new VarType(className, true);
+    // CONSTANT_Class values can be primitive descriptors for arrays (e.g. "[I").
+    // Those are not class names and must never be remapped through the name interceptor.
+    if (vt.type != CodeType.OBJECT || vt.value == null) {
+      return null;
+    }
 
     String newName = interceptor.getName(vt.value);
     if (newName != null) {
