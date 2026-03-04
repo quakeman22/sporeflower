@@ -29,6 +29,7 @@ import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructInnerClassesAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructLineNumberTableAttribute;
 import org.jetbrains.java.decompiler.struct.consts.ConstantPool;
+import org.jetbrains.java.decompiler.struct.consts.LinkConstant;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
@@ -313,6 +314,16 @@ public class ClassesProcessor implements CodeConstants {
                     isReferencedByEnclosingSignatures(nestedNode.classStruct, scl)) {
                   nestedNode.type = entry.outerNameIdx == 0 ? ClassNode.Type.LOCAL : ClassNode.Type.MEMBER;
                 }
+                // Some obfuscated binaries clear inner_name_index even though the enclosing
+                // bytecode uses the nested type as a named class (fields/method calls/casts).
+                // Such classes are not source-level anonymous and must not stay anonymous.
+                if (nestedNode.type == ClassNode.Type.ANONYMOUS &&
+                    isReferencedByEnclosingCodeAsNamedType(nestedNode.classStruct, scl)) {
+                  nestedNode.type = entry.outerNameIdx == 0 ? ClassNode.Type.LOCAL : ClassNode.Type.MEMBER;
+                }
+                if (nestedNode.type != ClassNode.Type.ANONYMOUS && nestedNode.simpleName == null) {
+                  nestedNode.simpleName = nestedNode.classStruct.qualifiedName.substring(nestedNode.classStruct.qualifiedName.lastIndexOf('/') + 1);
+                }
 
                 if (nestedNode.type == ClassNode.Type.ANONYMOUS) {
                   StructClass cl = nestedNode.classStruct;
@@ -511,6 +522,75 @@ public class ClassesProcessor implements CodeConstants {
         return true;
       }
     }
+    return false;
+  }
+
+  private static boolean isReferencedByEnclosingCodeAsNamedType(StructClass nestedClass, StructClass enclosingClass) {
+    String nestedName = nestedClass.qualifiedName;
+    ConstantPool pool = enclosingClass.getPool();
+
+    StructEnclosingMethodAttribute attribute = nestedClass.getAttribute(StructGeneralAttribute.ATTRIBUTE_ENCLOSING_METHOD);
+    String enclosingMethod = attribute != null ? attribute.getMethodName() : null;
+    String enclosingDescriptor = attribute != null ? attribute.getMethodDescriptor() : null;
+
+    for (StructMethod method : enclosingClass.getMethods()) {
+      if (enclosingMethod != null) {
+        boolean sameMethodName = enclosingMethod.equals(method.getName());
+        boolean sameMethodDescriptor = enclosingDescriptor == null || enclosingDescriptor.equals(method.getDescriptor());
+        if (!sameMethodName || !sameMethodDescriptor) {
+          continue;
+        }
+      }
+
+      try {
+        method.expandData(enclosingClass);
+        FullInstructionSequence sequence = method.getInstructionSequence();
+        if (sequence == null) {
+          continue;
+        }
+
+        for (var instruction : sequence) {
+          switch (instruction.opcode) {
+            case opc_checkcast:
+            case opc_instanceof:
+            case opc_anewarray:
+            case opc_multianewarray:
+              if (nestedName.equals(pool.getPrimitiveConstant(instruction.operand(0)).getString())) {
+                return true;
+              }
+              break;
+            case opc_getfield:
+            case opc_putfield:
+            case opc_getstatic:
+            case opc_putstatic:
+            case opc_invokevirtual:
+            case opc_invokestatic:
+            case opc_invokeinterface:
+            case opc_invokespecial:
+              LinkConstant reference = pool.getLinkConstant(instruction.operand(0));
+              if (!nestedName.equals(reference.classname)) {
+                continue;
+              }
+              // Constructor references are expected for instantiation sites, including
+              // genuine anonymous class creation.
+              if (instruction.opcode == opc_invokespecial && CodeConstants.INIT_NAME.equals(reference.elementname)) {
+                continue;
+              }
+              return true;
+          }
+        }
+      }
+      catch (IOException ex) {
+        String message = "Could not read method while checking anonymous/named nested class usage: '" + enclosingClass.qualifiedName + "', '" +
+                         InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor()) + "'";
+        DecompilerContext.getLogger().writeMessage(message, IFernflowerLogger.Severity.WARN);
+        return true;
+      }
+      finally {
+        method.releaseResources();
+      }
+    }
+
     return false;
   }
 

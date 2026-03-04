@@ -1429,10 +1429,6 @@ public class InvocationExprent extends Exprent {
         }
       }
 
-      if (cls == cl && !matches.isEmpty()) {
-        return matches;
-      }
-
       visited.add(cls.qualifiedName);
       if (cls.superClass != null && !visited.contains(cls.superClass.value)) {
         StructClass tmp = DecompilerContext.getStructContext().getClass((String)cls.superClass.value);

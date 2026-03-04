@@ -639,6 +639,117 @@ public final class LabelHelper {
     return res;
   }
 
+  // Repairs malformed nested-loop shapes where a trailing outer-loop continue block
+  // is incorrectly embedded in an inner loop body.
+  // Pattern:
+  //   while (innerCond) {
+  //     ...
+  //     continue;        // to inner loop
+  //     outerStep;
+  //     continue outer;  // should execute after inner loop exits
+  //   }
+  // This method hoists `outerStep; continue outer;` out of the inner loop and
+  // reconnects the inner loop's break edge to the hoisted step.
+  public static boolean hoistLoopExitContinues(Statement stat) {
+    boolean res = false;
+
+    for (Statement child : new ArrayList<>(stat.getStats())) {
+      res |= hoistLoopExitContinues(child);
+    }
+
+    if (!(stat instanceof SequenceStatement bodySequence)) {
+      return res;
+    }
+
+    if (bodySequence.getStats().size() < 2) {
+      return res;
+    }
+
+    Statement parent = bodySequence.getParent();
+    if (!(parent instanceof DoStatement innerLoop)) {
+      return res;
+    }
+    if (!(innerLoop.getParent() instanceof SequenceStatement parentSequence)) {
+      return res;
+    }
+
+    Statement outerLoop = parentSequence.getParent();
+    if (!(outerLoop instanceof DoStatement || outerLoop instanceof SwitchStatement)) {
+      return res;
+    }
+
+    int lastIndex = bodySequence.getStats().size() - 1;
+    Statement tail = bodySequence.getStats().get(lastIndex);
+    Statement beforeTail = bodySequence.getStats().get(lastIndex - 1);
+    Statement beforeTailExit = getLastStatement(beforeTail);
+
+    StatEdge innerContinue = getSingleExplicitContinueEdge(beforeTailExit);
+    if (innerContinue == null || innerContinue.getDestination() != innerLoop) {
+      return res;
+    }
+
+    StatEdge outerContinue = getSingleExplicitContinueEdge(tail);
+    if (outerContinue == null || outerContinue.getDestination() != outerLoop) {
+      return res;
+    }
+
+    StatEdge loopBreak = null;
+    for (StatEdge edge : innerLoop.getSuccessorEdges(StatEdge.TYPE_BREAK)) {
+      if (edge.explicit && !innerLoop.containsStatementStrict(edge.getDestination())) {
+        if (loopBreak != null) {
+          return res;
+        }
+        loopBreak = edge;
+      }
+    }
+
+    if (loopBreak == null) {
+      return res;
+    }
+
+    bodySequence.getStats().removeWithKey(tail.id);
+
+    int loopIndex = parentSequence.getStats().getIndexByKey(innerLoop.id);
+    if (loopIndex < 0) {
+      return res;
+    }
+    tail.setParent(parentSequence);
+    parentSequence.getStats().addWithKeyAndIndex(loopIndex + 1, tail, tail.id);
+
+    for (StatEdge edge : new ArrayList<>(tail.getPredecessorEdges(StatEdge.TYPE_REGULAR))) {
+      if (edge.getSource() == beforeTail) {
+        beforeTail.removeSuccessor(edge);
+      }
+    }
+
+    innerLoop.changeEdgeType(EdgeDirection.FORWARD, loopBreak, StatEdge.TYPE_REGULAR);
+    loopBreak.changeDestination(tail);
+    loopBreak.changeClosure(null);
+    loopBreak.explicit = false;
+    loopBreak.labeled = false;
+
+    res = true;
+
+    return res;
+  }
+
+  private static StatEdge getSingleExplicitContinueEdge(Statement statement) {
+    List<StatEdge> edges = statement.getSuccessorEdges(Statement.STATEDGE_DIRECT_ALL);
+    if (edges.size() != 1) {
+      return null;
+    }
+    StatEdge edge = edges.get(0);
+    return edge.getType() == StatEdge.TYPE_CONTINUE && edge.explicit ? edge : null;
+  }
+
+  private static Statement getLastStatement(Statement statement) {
+    Statement current = statement;
+    while (current instanceof SequenceStatement && !current.getStats().isEmpty()) {
+      current = current.getStats().getLast();
+    }
+    return current;
+  }
+
   // Finds the max loop that can be reached by following unconditional break edges
   private static Statement findMaxJump(Statement enclosing) {
     Statement last = enclosing;

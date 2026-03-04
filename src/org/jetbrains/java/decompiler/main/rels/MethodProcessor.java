@@ -456,6 +456,10 @@ public class MethodProcessor implements Runnable {
 
     // must be the last invocation, because it makes the statement structure inconsistent
     // FIXME: new edge type needed
+    if (LabelHelper.hoistLoopExitContinues(root)) {
+      decompileRecord.add("HoistLoopExitContinues", root);
+    }
+
     if (LabelHelper.replaceContinueWithBreak(root)) {
       decompileRecord.add("ReplaceContinues", root);
     }
