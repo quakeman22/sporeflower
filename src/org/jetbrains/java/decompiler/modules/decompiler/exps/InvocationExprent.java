@@ -655,8 +655,15 @@ public class InvocationExprent extends Exprent {
     CheckTypesResult result = new CheckTypesResult();
 
     if (instance != null) {
-      result.addExprLowerBound(instance, VarType.findFamilyBottom(instance.getExprType().typeFamily));
-      result.addExprUpperBound(instance, instance.getExprType());
+      VarType instanceType = instance.getExprType();
+      result.addExprLowerBound(instance, VarType.findFamilyBottom(instanceType.typeFamily));
+
+      VarType ownerType = classname == null ? null : new VarType(CodeType.OBJECT, 0, classname);
+      if (ownerType != null && instanceType.type == CodeType.OBJECT && instanceType.typeFamily == TypeFamily.OBJECT) {
+        result.addExprUpperBound(instance, ownerType);
+      } else {
+        result.addExprUpperBound(instance, instanceType);
+      }
     }
 
     for (int i = 0; i < lstParameters.size(); i++) {
@@ -816,7 +823,8 @@ public class InvocationExprent extends Exprent {
           ClassNode instNode = DecompilerContext.getClassProcessor().getMapRootClasses().get(classname);
           // Don't cast to anonymous classes, since they by definition can't have a name
           // TODO: better fix may be to change equals to isSuperSet? all anonymous classes are superset of Object
-          boolean needsQualifierCast = ExprProcessor.needsReferenceNarrowingCast(leftType, rightType);
+          boolean needsQualifierCast = ExprProcessor.needsReferenceNarrowingCast(leftType, rightType)
+            || needsPrivateSpecialInvocationQualifierCast(leftType, rightType);
           if (needsQualifierCast && (instNode == null || instNode.type != ClassNode.Type.ANONYMOUS)) {
             appendInstCast(buf, leftType, res);
           } else if (remappedInstType != null) {
@@ -934,6 +942,33 @@ public class InvocationExprent extends Exprent {
       res.encloseWithParens();
     }
     buf.append(res).append(")");
+  }
+
+  private boolean needsPrivateSpecialInvocationQualifierCast(VarType leftType, VarType rightType) {
+    if (functype != Type.GENERAL || invocationType != InvocationType.SPECIAL) {
+      return false;
+    }
+
+    if (rightType.type != CodeType.OBJECT || leftType.type != CodeType.OBJECT) {
+      return false;
+    }
+
+    if (InterpreterUtil.equalObjects(leftType.value, rightType.value)) {
+      return false;
+    }
+
+    StructClass owner = DecompilerContext.getStructContext().getClass(classname);
+    if (owner == null) {
+      return false;
+    }
+
+    StructMethod method = owner.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
+    if (method == null || !method.hasModifier(CodeConstants.ACC_PRIVATE)) {
+      return false;
+    }
+
+    // javac resolves private instance calls against the qualifier's compile-time type.
+    return DecompilerContext.getStructContext().instanceOf(rightType.value, leftType.value);
   }
 
   private boolean canSkipParenEnclose(Exprent instance) {

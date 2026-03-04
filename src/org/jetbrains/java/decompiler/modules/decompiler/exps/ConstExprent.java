@@ -608,8 +608,23 @@ public class ConstExprent extends Exprent {
   }
 
   public void adjustConstType(VarType expectedType) {
+    VarType targetType = VarType.UNBOXING_TYPES.getOrDefault(expectedType, expectedType);
+
+    // iconst_0/iconst_1 can represent numeric values when compared against byte/short/char slots.
+    // Keep those as numeric literals unless the expected type is truly boolean.
+    if (constType.type == CodeType.BOOLEAN
+      && targetType.typeFamily == TypeFamily.INTEGER
+      && targetType.type != CodeType.BOOLEAN) {
+      if (targetType.type == CodeType.BYTECHAR || targetType.type == CodeType.SHORTCHAR) {
+        setConstType(VarType.VARTYPE_INT);
+      } else {
+        setConstType(targetType);
+      }
+      return;
+    }
+
     // BYTECHAR and SHORTCHAR => CHAR in the CHAR context
-    if ((expectedType.equals(VarType.VARTYPE_CHAR) || expectedType.equals(VarType.VARTYPE_CHARACTER)) &&
+    if ((targetType.equals(VarType.VARTYPE_CHAR) || targetType.equals(VarType.VARTYPE_CHARACTER)) &&
             (constType.equals(VarType.VARTYPE_BYTECHAR) || constType.equals(VarType.VARTYPE_SHORTCHAR))) {
       int intValue = getIntValue();
       if (isPrintableAscii(intValue) || CHAR_ESCAPES.containsKey(intValue)) {
@@ -617,7 +632,7 @@ public class ConstExprent extends Exprent {
       }
     }
     // BYTE, BYTECHAR, SHORTCHAR, SHORT, CHAR => INT in the INT context
-    else if ((expectedType.equals(VarType.VARTYPE_INT) || expectedType.equals(VarType.VARTYPE_INTEGER)) &&
+    else if ((targetType.equals(VarType.VARTYPE_INT) || targetType.equals(VarType.VARTYPE_INTEGER)) &&
             constType.typeFamily == TypeFamily.INTEGER) {
       setConstType(VarType.VARTYPE_INT);
     }

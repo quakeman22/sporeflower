@@ -231,6 +231,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String VERIFY_PRE_POST_VARIABLE_MERGES = "verify-pre-post-merges";
 
+  @Name("[Experimental] J2ME Strict Slot Merge")
+  @Description("Use strict slot merge rules for legacy StackMap-based J2ME bytecode to prioritize recompilable output.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String J2ME_STRICT_SLOT_MERGE = "j2me-strict-slot-merge";
+
   @Name("[Experimental] Use old try deduplication")
   @Description("Use the old try deduplication algorithm for methods with obfuscated exceptions, which inserts dummy exception handlers instead of duplicating blocks")
   @Type(DecompilerOption.Type.BOOLEAN)
@@ -469,6 +474,7 @@ public interface IFernflowerPreferences {
     defaults.put(SIMPLIFY_STACK_SECOND_PASS, "1"); // Generally produces better bytecode, useful to debug if it does something strange
     defaults.put(VERIFY_VARIABLE_MERGES, "0"); // Produces more correct code in rare cases, but hurts code cleanliness in the majority of cases. Default off until a better fix is created.
     defaults.put(VERIFY_PRE_POST_VARIABLE_MERGES, "0");
+    defaults.put(J2ME_STRICT_SLOT_MERGE, "0");
     defaults.put(OLD_TRY_DEDUP, "0");
     defaults.put(DECOMPILE_PREVIEW, "1"); // Preview features are useful to decompile in almost all cases
 

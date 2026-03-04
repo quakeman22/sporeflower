@@ -22,6 +22,7 @@ import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribute.LocalVariable;
 import org.jetbrains.java.decompiler.struct.attr.StructMethodParametersAttribute;
+import org.jetbrains.java.decompiler.struct.attr.StructStackMapAttribute;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
@@ -49,6 +50,9 @@ public class VarDefinitionHelper {
   private final RootStatement root;
   private final StructMethod mt;
   private final Map<VarVersionPair, String> clashingNames = new HashMap<>();
+  private final boolean j2meStrictSlotMerge;
+  private final StructStackMapAttribute legacyStackMap;
+  private final Map<VarVersionPair, Set<VarType>> legacySlotTypeEvidence;
 
   public VarDefinitionHelper(RootStatement root, StructMethod mt, VarProcessor varproc) {
     this(root, mt, varproc, true);
@@ -63,6 +67,9 @@ public class VarDefinitionHelper {
     this.varproc = varproc;
     this.root = root;
     this.mt = mt;
+    this.legacyStackMap = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_STACK_MAP);
+    this.j2meStrictSlotMerge = DecompilerContext.getOption(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE) || this.legacyStackMap != null;
+    this.legacySlotTypeEvidence = j2meStrictSlotMerge && run ? collectLegacySlotTypeEvidence() : new HashMap<>();
 
     // If we are asking for a pure invocation, don't run the analysis
     if (!run) {
@@ -245,7 +252,9 @@ public class VarDefinitionHelper {
       }
     }
 
-    mergeVars(root);
+    if (!j2meStrictSlotMerge) {
+      mergeVars(root);
+    }
     propagateLVTs(root);
     setNonFinal(root, new HashSet<>());
     remapClashingNames(root, mt);
@@ -661,6 +670,8 @@ public class VarDefinitionHelper {
       //System.out.println("Remapping: " + remap.getKey() + " -> " + remap.getValue());
       if (!remapVar(stat, remap.getKey(), remap.getValue())) {
         denylist.put(remap.getKey(), remap.getValue());
+      } else {
+        mergeLegacySlotTypeEvidence(remap.getKey(), remap.getValue());
       }
 
       remap = mergeVars(stat, parent, new HashMap<>(), denylist);
@@ -951,7 +962,119 @@ public class VarDefinitionHelper {
     return current.equals(existing);
   }
 
+  private Map<VarVersionPair, Set<VarType>> collectLegacySlotTypeEvidence() {
+    if (legacyStackMap == null) {
+      return new HashMap<>();
+    }
+
+    Map<VarVersionPair, Set<VarType>> observedTypes = new HashMap<>();
+    StatementIterator.iterate(root, exprent -> {
+      if (!(exprent instanceof VarExprent varExprent) || varExprent.getVersion() < 0 || varExprent.bytecode == null) {
+        return 0;
+      }
+
+      Integer originalIndex = varproc.getVarOriginalIndex(varExprent.getIndex());
+      if (originalIndex == null || originalIndex < 0) {
+        return 0;
+      }
+
+      VarVersionPair pair = new VarVersionPair(varExprent);
+      for (int offset = varExprent.bytecode.nextSetBit(0); offset >= 0; offset = varExprent.bytecode.nextSetBit(offset + 1)) {
+        VarType localType = legacyStackMap.getLocalType(offset, originalIndex);
+        if (localType != null) {
+          observedTypes.computeIfAbsent(pair, k -> new HashSet<>()).add(localType);
+        }
+      }
+
+      return 0;
+    });
+    return observedTypes;
+  }
+
+  private void mergeLegacySlotTypeEvidence(VarVersionPair from, VarVersionPair to) {
+    if (!j2meStrictSlotMerge || legacySlotTypeEvidence.isEmpty()) {
+      return;
+    }
+
+    Set<VarType> fromTypes = legacySlotTypeEvidence.remove(from);
+    if (fromTypes == null || fromTypes.isEmpty()) {
+      return;
+    }
+
+    legacySlotTypeEvidence.computeIfAbsent(to, key -> new HashSet<>()).addAll(fromTypes);
+  }
+
+  private boolean hasIncompatibleLegacySlotTypes(VarVersionPair from, VarVersionPair to) {
+    if (legacyStackMap == null || legacySlotTypeEvidence.isEmpty()) {
+      return false;
+    }
+
+    Set<VarType> fromTypes = legacySlotTypeEvidence.get(from);
+    Set<VarType> toTypes = legacySlotTypeEvidence.get(to);
+    if (fromTypes == null || fromTypes.isEmpty() || toTypes == null || toTypes.isEmpty()) {
+      return false;
+    }
+
+    for (VarType fromType : fromTypes) {
+      for (VarType toType : toTypes) {
+        if (!areLegacySlotTypesCompatible(fromType, toType)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private boolean areLegacySlotTypesCompatible(VarType first, VarType second) {
+    if (first == null || second == null) {
+      return true;
+    }
+
+    if (first.type == CodeType.UNKNOWN || second.type == CodeType.UNKNOWN) {
+      return true;
+    }
+
+    boolean firstReference = first.typeFamily == TypeFamily.OBJECT;
+    boolean secondReference = second.typeFamily == TypeFamily.OBJECT;
+
+    if (first.type == CodeType.NULL || second.type == CodeType.NULL) {
+      return firstReference && secondReference;
+    }
+
+    if (firstReference != secondReference) {
+      return false;
+    }
+
+    if (!firstReference) {
+      return first.type == second.type;
+    }
+
+    if (first.equals(VarType.VARTYPE_OBJECT) || second.equals(VarType.VARTYPE_OBJECT)) {
+      return true;
+    }
+
+    if (first.arrayDim != second.arrayDim) {
+      return false;
+    }
+
+    if (first.arrayDim > 0) {
+      return first.equals(second);
+    }
+
+    if (first.equals(second)) {
+      return true;
+    }
+
+    return DecompilerContext.getStructContext().instanceOf(first.value, second.value)
+      || DecompilerContext.getStructContext().instanceOf(second.value, first.value);
+  }
+
   private boolean canMergeTypes(VarVersionPair from, VarVersionPair to) {
+    if (j2meStrictSlotMerge && hasIncompatibleLegacySlotTypes(from, to)) {
+      return false;
+    }
+
     VarType mergedType = getMergedType(from, to);
     if (mergedType == null) {
       return false;
@@ -1149,48 +1272,67 @@ public class VarDefinitionHelper {
   }
 
   private VarType getMergedType(VarType fromMin, VarType toMin, VarType fromMax, VarType toMax) {
-    if (fromMin != null && fromMin.equals(toMin)) {
+    if (!j2meStrictSlotMerge && fromMin != null && fromMin.equals(toMin)) {
       return fromMin; // Short circuit this for simplicities sake
     }
+
     VarType type = fromMin == null ? toMin : (toMin == null ? fromMin : VarType.join(fromMin, toMin));
     if (type == null || fromMin == null || toMin == null) {
       return null; // no common supertype, skip the remapping
     }
+
     if (type.type == CodeType.OBJECT) {
+      VarType merged = null;
       if (toMax != null) { // The target var is used in direct invocations
         if (fromMax != null) {
           // Max types are the highest class that this variable is used as a direct instance of without any casts.
           // This will pull up the to var type if the from requires a higher class type.
           // EXA: Collection -> List
           if (DecompilerContext.getStructContext().instanceOf(fromMax.value, toMax.value)) {
-            return fromMax;
+            merged = fromMax;
           }
         } else {
           // Pull to up to from: List -> ArrayList
           if (DecompilerContext.getStructContext().instanceOf(fromMin.value, toMax.value)) {
-            return fromMin;
+            merged = fromMin;
           }
         }
       } else {
         if (fromMax != null) {
           if (DecompilerContext.getStructContext().instanceOf(fromMax.value, toMin.value)) {
-            return fromMax;
+            merged = fromMax;
           }
         } else {
           if (DecompilerContext.getStructContext().instanceOf(toMin.value, fromMin.value)) {
-            return toMin;
+            merged = toMin;
           }
 
-          if (DecompilerContext.getStructContext().instanceOf(fromMin.value, toMin.value)) {
-            return toMin;
+          if (merged == null && DecompilerContext.getStructContext().instanceOf(fromMin.value, toMin.value)) {
+            merged = toMin;
           }
         }
       }
 
-      return null;
+      if (merged == null) {
+        return null;
+      }
+
+      if (j2meStrictSlotMerge && !merged.higherEqualInLatticeThan(type)) {
+        merged = type;
+      }
+
+      if (fromMax != null && !fromMax.higherEqualInLatticeThan(merged)) {
+        return null;
+      }
+
+      if (toMax != null && !toMax.higherEqualInLatticeThan(merged)) {
+        return null;
+      }
+
+      return merged;
     } else {
       // Both nonnull at this point
-      if (!fromMin.higherInLatticeThan(toMin)) {
+      if (!fromMin.equals(toMin) && !fromMin.higherInLatticeThan(toMin)) {
         // If type we're merging into the old type isn't a strict superset of the old type, we cannot merge
         return null;
       }
