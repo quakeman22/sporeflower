@@ -308,11 +308,13 @@ public class ClassesProcessor implements CodeConstants {
                 if (verifyAnonymousClasses && nestedNode.type == ClassNode.Type.ANONYMOUS && !isAnonymous(nestedNode.classStruct, scl)) {
                   nestedNode.type = ClassNode.Type.LOCAL;
                 }
+                boolean promotedAnonymousByNamedReference = false;
                 // Anonymous classes cannot be named in Java source. If the enclosing class
                 // signature explicitly references the nested type, keep it representable.
                 if (nestedNode.type == ClassNode.Type.ANONYMOUS &&
                     isReferencedByEnclosingSignatures(nestedNode.classStruct, scl)) {
                   nestedNode.type = entry.outerNameIdx == 0 ? ClassNode.Type.LOCAL : ClassNode.Type.MEMBER;
+                  promotedAnonymousByNamedReference = true;
                 }
                 // Some obfuscated binaries clear inner_name_index even though the enclosing
                 // bytecode uses the nested type as a named class (fields/method calls/casts).
@@ -320,6 +322,14 @@ public class ClassesProcessor implements CodeConstants {
                 if (nestedNode.type == ClassNode.Type.ANONYMOUS &&
                     isReferencedByEnclosingCodeAsNamedType(nestedNode.classStruct, scl)) {
                   nestedNode.type = entry.outerNameIdx == 0 ? ClassNode.Type.LOCAL : ClassNode.Type.MEMBER;
+                  promotedAnonymousByNamedReference = true;
+                }
+                // In this contradictory state (anonymous metadata but named usage), forcing a
+                // non-static member introduces synthetic outer captures not present in many
+                // J2ME-era obfuscated binaries. Keep the recovered member class static unless
+                // bytecode already provided explicit outer-capture plumbing.
+                if (promotedAnonymousByNamedReference && nestedNode.type == ClassNode.Type.MEMBER) {
+                  nestedNode.access |= CodeConstants.ACC_STATIC;
                 }
                 if (nestedNode.type != ClassNode.Type.ANONYMOUS && nestedNode.simpleName == null) {
                   nestedNode.simpleName = nestedNode.classStruct.qualifiedName.substring(nestedNode.classStruct.qualifiedName.lastIndexOf('/') + 1);
