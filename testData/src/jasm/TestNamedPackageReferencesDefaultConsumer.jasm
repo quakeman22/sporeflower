@@ -1,0 +1,24 @@
+package app;
+
+// Packaged class in a different package that consumes pkg/b.
+super public class c extends pkg/b
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/b."<init>":"()V";
+  return;
+}
+
+public Method v:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  invokevirtual Method pkg/b.z:"()I";
+  ireturn;
+}
+
+} // end Class app/c

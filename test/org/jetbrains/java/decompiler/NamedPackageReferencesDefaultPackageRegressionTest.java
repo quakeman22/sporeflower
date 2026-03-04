@@ -22,11 +22,14 @@ public class NamedPackageReferencesDefaultPackageRegressionTest extends Decompil
     Path classDir = fixture.getTestDataDir().resolve("classes/jasm");
     Path defaultClass = classDir.resolve("a.class");
     Path packagedClass = classDir.resolve("pkg/b.class");
+    Path packagedConsumerClass = classDir.resolve("app/c.class");
     assertTrue(Files.isRegularFile(defaultClass), "Missing test class: " + defaultClass);
     assertTrue(Files.isRegularFile(packagedClass), "Missing test class: " + packagedClass);
+    assertTrue(Files.isRegularFile(packagedConsumerClass), "Missing test class: " + packagedConsumerClass);
 
     fixture.getDecompiler().addSource(defaultClass.toFile());
     fixture.getDecompiler().addSource(packagedClass.toFile());
+    fixture.getDecompiler().addSource(packagedConsumerClass.toFile());
     fixture.getDecompiler().decompileContext();
 
     List<Path> decompiledSources = listJavaSources(fixture.getTargetDir());

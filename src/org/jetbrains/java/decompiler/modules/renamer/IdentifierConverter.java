@@ -28,6 +28,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
   private List<ClassWrapperNode> rootClasses = new ArrayList<>();
   private List<ClassWrapperNode> rootInterfaces = new ArrayList<>();
   private Map<String, Map<String, String>> interfaceNameMaps = new LinkedHashMap<>();
+  private static final String MULTI_PACKAGE_DEFAULT_RELOCATION = "decompiled/defaultpkg";
   private final Map<String, String> forcedPackageRelocations = new HashMap<>();
 
   public IdentifierConverter(StructContext context, IIdentifierRenamer helper, PoolInterceptor interceptor) {
@@ -197,53 +198,40 @@ public class IdentifierConverter implements NewClassNameBuilder {
   private void collectForcedPackageRelocations() {
     forcedPackageRelocations.clear();
 
-    Set<String> packagesToRelocate = new HashSet<>();
+    Map<String, Set<String>> defaultClassUsagePackages = new LinkedHashMap<>();
     for (StructClass ownClass : context.getOwnClasses()) {
-      String className = ownClass.qualifiedName;
-      int packageIndex = className.lastIndexOf('/');
-      if (packageIndex < 0) {
+      String ownerPackage = packageName(ownClass.qualifiedName);
+      if (ownerPackage.isEmpty()) {
         continue;
       }
 
-      String classPackage = className.substring(0, packageIndex);
-      if (referencesDefaultPackageOwnClass(ownClass)) {
-        packagesToRelocate.add(classPackage);
+      for (String referencedDefaultClass : collectDefaultPackageOwnReferences(ownClass)) {
+        defaultClassUsagePackages.computeIfAbsent(referencedDefaultClass, key -> new TreeSet<>()).add(ownerPackage);
       }
     }
 
-    if (packagesToRelocate.isEmpty()) {
-      return;
-    }
-
-    for (StructClass ownClass : context.getOwnClasses()) {
-      String className = ownClass.qualifiedName;
-      int packageIndex = className.lastIndexOf('/');
-      if (packageIndex < 0) {
-        continue;
-      }
-
-      String classPackage = className.substring(0, packageIndex);
-      if (packagesToRelocate.contains(classPackage)) {
-        forcedPackageRelocations.put(className, "");
-      }
+    for (Map.Entry<String, Set<String>> entry : defaultClassUsagePackages.entrySet()) {
+      String defaultClass = entry.getKey();
+      String targetPackage = chooseRelocationPackage(entry.getValue());
+      forcedPackageRelocations.put(defaultClass, targetPackage);
     }
   }
 
-  private boolean referencesDefaultPackageOwnClass(StructClass owner) {
-    if (owner.superClass != null && isDefaultPackageOwnClass(owner.superClass.getString())) {
-      return true;
+  private Set<String> collectDefaultPackageOwnReferences(StructClass owner) {
+    Set<String> references = new LinkedHashSet<>();
+
+    if (owner.superClass != null) {
+      addDefaultPackageOwnReferenceIfPresent(references, owner.superClass.getString());
     }
 
     for (String interfaceName : owner.getInterfaceNames()) {
-      if (isDefaultPackageOwnClass(interfaceName)) {
-        return true;
-      }
+      addDefaultPackageOwnReferenceIfPresent(references, interfaceName);
     }
 
     for (StructField field : owner.getFields()) {
       VarType type = FieldDescriptor.parseDescriptor(field.getDescriptor()).type;
       if (isDefaultPackageOwnType(type)) {
-        return true;
+        references.add(type.value);
       }
     }
 
@@ -251,33 +239,47 @@ public class IdentifierConverter implements NewClassNameBuilder {
       MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.getDescriptor());
       for (VarType param : descriptor.params) {
         if (isDefaultPackageOwnType(param)) {
-          return true;
+          references.add(param.value);
         }
       }
 
       if (isDefaultPackageOwnType(descriptor.ret)) {
-        return true;
+        references.add(descriptor.ret.value);
       }
     }
 
     ConstantPool pool = owner.getPool();
-    if (pool == null) {
-      return false;
-    }
-
-    for (PooledConstant pooled : pool.getPool()) {
-      if (pooled instanceof PrimitiveConstant primitive
-        && primitive.type == CodeConstants.CONSTANT_Class
-        && isDefaultPackageOwnClass(primitive.getString())) {
-        return true;
+    if (pool != null) {
+      for (PooledConstant pooled : pool.getPool()) {
+        if (pooled instanceof PrimitiveConstant primitive && primitive.type == CodeConstants.CONSTANT_Class) {
+          addDefaultPackageOwnReferenceIfPresent(references, primitive.getString());
+        }
       }
     }
 
-    return false;
+    return references;
+  }
+
+  private void addDefaultPackageOwnReferenceIfPresent(Set<String> references, String className) {
+    if (isDefaultPackageOwnClass(className)) {
+      references.add(className);
+    }
+  }
+
+  private static String chooseRelocationPackage(Set<String> referencingPackages) {
+    if (referencingPackages.size() == 1) {
+      return referencingPackages.iterator().next();
+    }
+    return MULTI_PACKAGE_DEFAULT_RELOCATION;
+  }
+
+  private static String packageName(String internalClassName) {
+    int idx = internalClassName.lastIndexOf('/');
+    return idx < 0 ? "" : internalClassName.substring(0, idx);
   }
 
   private boolean isDefaultPackageOwnType(VarType type) {
-    if (type.type == CodeType.OBJECT && type.value != null) {
+    if (type.value != null && (type.type == CodeType.OBJECT || type.arrayDim > 0)) {
       return isDefaultPackageOwnClass(type.value);
     }
     return false;
