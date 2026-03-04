@@ -1009,6 +1009,18 @@ public class ExprProcessor implements CodeConstants {
       cast = castAlways;
     }
 
+    // Numeric-to-boolean casts are illegal in Java source.
+    // If obfuscated bytecode uses 0/1 constants for booleans, render literals and skip the cast.
+    if (cast && exprent instanceof ConstExprent constExpr
+      && (leftType.equals(VarType.VARTYPE_BOOLEAN) || leftType.equals(VarType.VARTYPE_BOOLEAN_OBJ))
+      && constExpr.getConstType().typeFamily.intOrBool()) {
+      int value = constExpr.getIntValue();
+      if (value == 0 || value == 1) {
+        constExpr.setConstType(VarType.VARTYPE_BOOLEAN);
+        cast = false;
+      }
+    }
+
     boolean castLambda = !cast && exprent instanceof NewExprent && !leftType.equals(rightType) &&
                           lambdaNeedsCast(leftType, (NewExprent)exprent);
 
