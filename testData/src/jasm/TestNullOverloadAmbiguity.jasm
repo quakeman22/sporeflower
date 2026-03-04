@@ -1,0 +1,39 @@
+package pkg;
+
+// Bytecode calls the String overload with a null literal; source needs an explicit cast.
+super public class TestNullOverloadAmbiguity
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method a:"(ILjava/lang/String;)I"
+  stack 1 locals 2
+{
+  iconst_1;
+  ireturn;
+}
+
+public static Method a:"(I[B)I"
+  stack 1 locals 2
+{
+  iconst_2;
+  ireturn;
+}
+
+public static Method test:"()I"
+  stack 2 locals 0
+{
+  iconst_0;
+  aconst_null;
+  invokestatic Method pkg/TestNullOverloadAmbiguity.a:"(ILjava/lang/String;)I";
+  ireturn;
+}
+
+} // end Class pkg/TestNullOverloadAmbiguity

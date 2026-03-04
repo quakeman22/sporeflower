@@ -1,0 +1,15 @@
+// Default-package class with package-private state.
+super public class TestDefaultPackageRelocationA
+  version 49:0
+{
+static Field x:I;
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+} // end Class TestDefaultPackageRelocationA

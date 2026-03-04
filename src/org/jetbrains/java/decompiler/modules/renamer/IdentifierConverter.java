@@ -198,21 +198,28 @@ public class IdentifierConverter implements NewClassNameBuilder {
   private void collectForcedPackageRelocations() {
     forcedPackageRelocations.clear();
 
-    Map<String, Set<String>> defaultClassUsagePackages = new LinkedHashMap<>();
+    List<String> defaultOwnClasses = new ArrayList<>();
+    Set<String> referencingPackages = new TreeSet<>();
+
     for (StructClass ownClass : context.getOwnClasses()) {
-      String ownerPackage = packageName(ownClass.qualifiedName);
+      String className = ownClass.qualifiedName;
+      String ownerPackage = packageName(className);
       if (ownerPackage.isEmpty()) {
+        defaultOwnClasses.add(className);
         continue;
       }
 
-      for (String referencedDefaultClass : collectDefaultPackageOwnReferences(ownClass)) {
-        defaultClassUsagePackages.computeIfAbsent(referencedDefaultClass, key -> new TreeSet<>()).add(ownerPackage);
+      if (!collectDefaultPackageOwnReferences(ownClass).isEmpty()) {
+        referencingPackages.add(ownerPackage);
       }
     }
 
-    for (Map.Entry<String, Set<String>> entry : defaultClassUsagePackages.entrySet()) {
-      String defaultClass = entry.getKey();
-      String targetPackage = chooseRelocationPackage(entry.getValue());
+    if (defaultOwnClasses.isEmpty() || referencingPackages.isEmpty()) {
+      return;
+    }
+
+    String targetPackage = chooseRelocationPackage(referencingPackages);
+    for (String defaultClass : defaultOwnClasses) {
       forcedPackageRelocations.put(defaultClass, targetPackage);
     }
   }

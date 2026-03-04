@@ -1,0 +1,21 @@
+// Another default-package class that relies on package-private access to A.x.
+super public class TestDefaultPackageRelocationB
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method m:"()I"
+  stack 1 locals 1
+{
+  getstatic Field TestDefaultPackageRelocationA.x:I;
+  ireturn;
+}
+
+} // end Class TestDefaultPackageRelocationB

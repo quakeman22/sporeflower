@@ -1536,13 +1536,15 @@ public class InvocationExprent extends Exprent {
       return EMPTY_BIT_SET;
     }
 
-    BitSet missed = new BitSet(lstParameters.size());
+    BitSet nullLiteralAmbiguous = getNullLiteralAmbiguousParameters(matches);
 
     // treat signature polymorphic methods as always ambiguous
     // even if we have the classes available and think they are accepting Object...
     if (CodeConstants.areParametersPolymorphic(classname, name)) {
-      missed.set(0, lstParameters.size());
-      return missed;
+      BitSet all = new BitSet(lstParameters.size());
+      all.set(0, lstParameters.size());
+      all.or(nullLiteralAmbiguous);
+      return all;
     }
 
     StructMethod currentMethod = cl.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
@@ -1579,17 +1581,17 @@ public class InvocationExprent extends Exprent {
     }
 
     if (possible.size() == 1) {
-      return EMPTY_BIT_SET;
+      return nullLiteralAmbiguous;
     }
 
     if (exacts.isEmpty()) {
-      return EMPTY_BIT_SET;
+      return nullLiteralAmbiguous;
     } else if (exacts.size() == 1) {
       StructMethod exact = exacts.iterator().next();
 
       // Exact method is our own? No need to check ambiguity, we have our match!
       if (exact == currentMethod) {
-        return EMPTY_BIT_SET;
+        return nullLiteralAmbiguous;
       }
     }
 
@@ -1619,6 +1621,44 @@ public class InvocationExprent extends Exprent {
             ambiguous.set(i);
           }
         }
+      }
+    }
+
+    ambiguous.or(nullLiteralAmbiguous);
+    return ambiguous;
+  }
+
+  private BitSet getNullLiteralAmbiguousParameters(List<StructMethod> matches) {
+    BitSet ambiguous = new BitSet(descriptor.params.length);
+    if (matches.size() < 2) {
+      return ambiguous;
+    }
+
+    int parameterCount = Math.min(descriptor.params.length, lstParameters.size());
+    for (int i = 0; i < parameterCount; i++) {
+      if (lstParameters.get(i).getExprType().type != CodeType.NULL) {
+        continue;
+      }
+
+      if (descriptor.params[i].typeFamily != TypeFamily.OBJECT) {
+        continue;
+      }
+
+      boolean foundDifferent = false;
+      for (StructMethod candidate : matches) {
+        MethodDescriptor candidateDescriptor = candidate.methodDescriptor();
+        if (candidateDescriptor.params.length <= i) {
+          continue;
+        }
+
+        if (!descriptor.params[i].equals(candidateDescriptor.params[i])) {
+          foundDifferent = true;
+          break;
+        }
+      }
+
+      if (foundDifferent) {
+        ambiguous.set(i);
       }
     }
 
