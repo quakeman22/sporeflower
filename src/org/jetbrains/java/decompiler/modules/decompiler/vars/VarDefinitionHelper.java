@@ -1959,13 +1959,15 @@ public class VarDefinitionHelper {
 
                 // Try to perform a rename
                 String name = mw.varproc.getVarName(vvp);
-                String original = name;
-                name = rename(nameMap, name);
+                if (name != null) {
+                  String original = name;
+                  name = rename(nameMap, name);
 
-                // Did we rename? If so, we should add it to the name map and set as clashing
-                if (original != null && !original.equals(name)) {
-                  mw.varproc.setClashingName(vvp, name);
-                  nameMap.put(new VarInMethod(vvp, mt2), name);
+                  // Did we rename? If so, we should add it to the name map and set as clashing
+                  if (!original.equals(name)) {
+                    mw.varproc.setClashingName(vvp, name);
+                    nameMap.put(new VarInMethod(vvp, mt2), name);
+                  }
                 }
               }
 
@@ -2013,13 +2015,15 @@ public class VarDefinitionHelper {
 
                   // Try to perform a rename
                   String name = mw.varproc.getVarName(vvp);
-                  String original = name;
-                  name = rename(nameMap, name);
+                  if (name != null) {
+                    String original = name;
+                    name = rename(nameMap, name);
 
-                  // Did we rename? If so, we should add it to the name map and set as clashing
-                  if (original != null && !original.equals(name)) {
-                    mw.varproc.setClashingName(vvp, name);
-                    nameMap.put(new VarInMethod(vvp, mt2), name);
+                    // Did we rename? If so, we should add it to the name map and set as clashing
+                    if (!original.equals(name)) {
+                      mw.varproc.setClashingName(vvp, name);
+                      nameMap.put(new VarInMethod(vvp, mt2), name);
+                    }
                   }
                 }
 
