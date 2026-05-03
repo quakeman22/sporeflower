@@ -216,6 +216,13 @@ public class ContextUnit {
 
     waitForAll(futures);
     futures.clear();
+
+    for (final ClassContext classCtx : toDump) {
+      if (classCtx.pendingError == null) {
+        decompiledData.releaseClass(classCtx.cl);
+      }
+    }
+
     pool.shutdown();
     THREAD_ID.set(0);
 

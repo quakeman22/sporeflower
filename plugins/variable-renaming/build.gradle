@@ -3,7 +3,8 @@ import org.vineflower.build.TestDataRuntimesProvider
 base.archivesName = 'vineflower-variable-renaming'
 
 dependencies {
-  implementation project(":")
+  compileOnly files(rootProject.sourceSets.main.output)
+  testImplementation files(rootProject.sourceSets.main.output)
   testImplementation testFixtures(project(":"))
 }
 

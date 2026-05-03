@@ -264,6 +264,11 @@ public class Fernflower implements IDecompiledData {
     }
   }
 
+  @Override
+  public void releaseClass(StructClass cl) {
+    classProcessor.releaseClass(cl);
+  }
+
   static {
     Init.init();
   }

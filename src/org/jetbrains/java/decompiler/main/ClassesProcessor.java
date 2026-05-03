@@ -692,7 +692,6 @@ public class ClassesProcessor implements CodeConstants {
     } catch (CancelationManager.CanceledException e) {
       throw e;
     } finally {
-      destroyWrappers(root);
       DecompilerContext.getLogger().endReadingClass();
     }
   }
@@ -738,6 +737,13 @@ public class ClassesProcessor implements CodeConstants {
 
     for (ClassNode nd : node.nested) {
       addClassNameToImport(nd, imp);
+    }
+  }
+
+  public void releaseClass(StructClass cl) {
+    ClassNode root = mapRootClasses.get(cl.qualifiedName);
+    if (root != null && root.type == ClassNode.Type.ROOT) {
+      destroyWrappers(root);
     }
   }
 

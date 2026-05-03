@@ -10,4 +10,7 @@ public interface IDecompiledData {
   void processClass(StructClass cl) throws IOException;
 
   String getClassContent(StructClass cl);
+
+  default void releaseClass(StructClass cl) {
+  }
 }
