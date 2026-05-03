@@ -4,10 +4,10 @@ public class TestTryCatchFinally {
    public void test1(String x) {
       try {
          System.out.println("sout1");// 24
-      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {
+      } catch (Exception e) {
          try {
             System.out.println("sout2");// 27
-         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var8) {// 28
+         } catch (Exception var8) {// 28
          }
       } finally {
          System.out.println("finally");// 34
@@ -27,7 +27,7 @@ public class TestTryCatchFinally {
    public int test(String a) {
       try {
          return Integer.parseInt(a);// 51
-      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 52
+      } catch (Exception e) {// 52
          System.out.println("Error" + e);// 53
       } finally {
          System.out.println("Finally");// 55

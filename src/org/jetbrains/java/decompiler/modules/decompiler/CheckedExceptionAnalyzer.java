@@ -58,7 +58,9 @@ public final class CheckedExceptionAnalyzer {
     List<String> removedCheckedTypes = new ArrayList<>();
 
     for (String exceptionType : exceptionTypes) {
-      if (CheckedExceptionSupport.isCheckedExceptionType(exceptionType) && !canStatementThrow(tryBody, exceptionType)) {
+      boolean unreachableCheckedCatch = CheckedExceptionSupport.needsDeclaredCheckedThrowForCatchReachability(exceptionType)
+        && !canStatementThrow(tryBody, exceptionType);
+      if (isShadowedByPreviousCatch(exceptionType, previousCatchTypes) || unreachableCheckedCatch) {
         removedCheckedTypes.add(exceptionType);
       } else {
         renderedTypes.add(exceptionType);

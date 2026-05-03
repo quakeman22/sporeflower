@@ -1,0 +1,57 @@
+package pkg;
+
+super public class TestBroadCatchWithoutDeclaredThrows
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method noThrow:"()V"
+  stack 0 locals 0
+{
+  return;
+}
+
+public static Method catchException:"()V"
+  stack 1 locals 1
+{
+  goto L0;
+  catch t0 java/lang/Exception;
+    stack_frame_type stack1;
+    stack_map class java/lang/Exception;
+    astore_0;
+    aload_0;
+    invokevirtual Method java/lang/Exception.printStackTrace:"()V";
+    return;
+L0:
+  try t0;
+    invokestatic Method noThrow:"()V";
+    return;
+  endtry t0;
+}
+
+public static Method catchThrowable:"()V"
+  stack 1 locals 1
+{
+  goto L0;
+  catch t0 java/lang/Throwable;
+    stack_frame_type stack1;
+    stack_map class java/lang/Throwable;
+    astore_0;
+    aload_0;
+    invokevirtual Method java/lang/Throwable.printStackTrace:"()V";
+    return;
+L0:
+  try t0;
+    invokestatic Method noThrow:"()V";
+    return;
+  endtry t0;
+}
+
+} // end Class TestBroadCatchWithoutDeclaredThrows

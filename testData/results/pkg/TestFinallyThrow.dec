@@ -11,7 +11,7 @@ public class TestFinallyThrow {
                   if (!b) {// 10
                      break label97;
                   }
-               } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 13
+               } catch (Exception e) {// 13
                   throw e;// 14
                } finally {
                   System.out.println(2);// 16

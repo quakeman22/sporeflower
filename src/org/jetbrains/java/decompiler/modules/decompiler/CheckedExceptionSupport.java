@@ -53,6 +53,21 @@ final class CheckedExceptionSupport {
     return simpleName.endsWith("Exception");
   }
 
+  static boolean needsDeclaredCheckedThrowForCatchReachability(String catchType) {
+    if (!isCheckedExceptionType(catchType)) {
+      return false;
+    }
+
+    // javac accepts catch (Exception) and catch (Throwable) even when the try
+    // body has no declared checked throws: unchecked RuntimeException/Error
+    // flows are always possible and are assignment-compatible with those types.
+    return !isUncheckedThrowableAssignableTo(catchType);
+  }
+
+  private static boolean isUncheckedThrowableAssignableTo(String catchType) {
+    return isSubtypeOf("java/lang/RuntimeException", catchType) || isSubtypeOf("java/lang/Error", catchType);
+  }
+
   static String toBinaryName(String internalName) {
     return internalName.replace('/', '.');
   }

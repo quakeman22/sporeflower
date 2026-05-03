@@ -21,7 +21,7 @@ public class TestTryWithResourcesAfterSwitch {
 
                try {
                   System.out.println("hi");// 21
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var20) {// 20
+               } catch (Throwable var20) {// 20
                   var4 = var20;
                   throw var20;
                } finally {
@@ -29,7 +29,7 @@ public class TestTryWithResourcesAfterSwitch {
                      if (var4 != null) {
                         try {
                            vvv26.close();
-                        } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var19) {
+                        } catch (Throwable var19) {
                            var4.addSuppressed(var19);
                         }
                      } else {
@@ -58,7 +58,7 @@ public class TestTryWithResourcesAfterSwitch {
 
                try {
                   System.out.println("hi");// 40
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var19) {// 39
+               } catch (Throwable var19) {// 39
                   var23 = var19;
                   throw var19;
                } finally {
@@ -66,7 +66,7 @@ public class TestTryWithResourcesAfterSwitch {
                      if (var23 != null) {
                         try {
                            vvv26.close();
-                        } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var18) {
+                        } catch (Throwable var18) {
                            var23.addSuppressed(var18);
                         }
                      } else {

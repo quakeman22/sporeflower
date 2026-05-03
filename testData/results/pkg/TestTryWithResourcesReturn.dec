@@ -13,7 +13,7 @@ public class TestTryWithResourcesReturn {
       Scanner var4;
       try {
          var4 = scanner;
-      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {// 10
+      } catch (Throwable var13) {// 10
          var3 = var13;
          throw var13;
       } finally {
@@ -21,7 +21,7 @@ public class TestTryWithResourcesReturn {
             if (var3 != null) {// 12
                try {
                   scanner.close();
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var12) {
+               } catch (Throwable var12) {
                   var3.addSuppressed(var12);
                }
             } else {
@@ -42,7 +42,7 @@ public class TestTryWithResourcesReturn {
          try {
             System.out.println("try");// 17
             var4 = scanner;
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var14) {// 16
+         } catch (Throwable var14) {// 16
             var3 = var14;
             throw var14;
          } finally {
@@ -50,7 +50,7 @@ public class TestTryWithResourcesReturn {
                if (var3 != null) {
                   try {
                      scanner.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {
+                  } catch (Throwable var13) {
                      var3.addSuppressed(var13);
                   }
                } else {
@@ -74,7 +74,7 @@ public class TestTryWithResourcesReturn {
          Scanner var4;
          try {
             var4 = scanner;
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var14) {// 26
+         } catch (Throwable var14) {// 26
             var3 = var14;
             throw var14;
          } finally {
@@ -82,7 +82,7 @@ public class TestTryWithResourcesReturn {
                if (var3 != null) {
                   try {
                      scanner.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {
+                  } catch (Throwable var13) {
                      var3.addSuppressed(var13);
                   }
                } else {
@@ -108,7 +108,7 @@ public class TestTryWithResourcesReturn {
          Scanner var4;
          try {
             var4 = scanner;
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var14) {// 37
+         } catch (Throwable var14) {// 37
             var3 = var14;
             throw var14;
          } finally {
@@ -116,7 +116,7 @@ public class TestTryWithResourcesReturn {
                if (var3 != null) {
                   try {
                      scanner.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {
+                  } catch (Throwable var13) {
                      var3.addSuppressed(var13);
                   }
                } else {
@@ -143,7 +143,7 @@ public class TestTryWithResourcesReturn {
          try {
             System.out.println("try");// 49
             var4 = scanner;
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var14) {// 48
+         } catch (Throwable var14) {// 48
             var3 = var14;
             throw var14;
          } finally {
@@ -151,7 +151,7 @@ public class TestTryWithResourcesReturn {
                if (var3 != null) {
                   try {
                      scanner.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {
+                  } catch (Throwable var13) {
                      var3.addSuppressed(var13);
                   }
                } else {
@@ -175,7 +175,7 @@ public class TestTryWithResourcesReturn {
          Scanner var4;
          try {
             var4 = scanner != null ? new Scanner(System.in) : scanner;
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var14) {// 58
+         } catch (Throwable var14) {// 58
             var3 = var14;
             throw var14;
          } finally {
@@ -183,7 +183,7 @@ public class TestTryWithResourcesReturn {
                if (var3 != null) {
                   try {
                      scanner.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {
+                  } catch (Throwable var13) {
                      var3.addSuppressed(var13);
                   }
                } else {
@@ -206,7 +206,7 @@ public class TestTryWithResourcesReturn {
       Scanner var4;
       try {
          var4 = scanner;
-      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {// 67
+      } catch (Throwable var13) {// 67
          var3 = var13;
          throw var13;
       } finally {
@@ -214,7 +214,7 @@ public class TestTryWithResourcesReturn {
             if (var3 != null) {
                try {
                   scanner.close();// 69
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var12) {
+               } catch (Throwable var12) {
                   var3.addSuppressed(var12);
                }
             } else {
@@ -233,7 +233,7 @@ public class TestTryWithResourcesReturn {
 
          try {
             ;
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var20) {// 73
+         } catch (Throwable var20) {// 73
             var3 = var20;
             throw var20;
          } finally {
@@ -241,7 +241,7 @@ public class TestTryWithResourcesReturn {
                if (var3 != null) {
                   try {
                      scanner.close();// 75
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var19) {
+                  } catch (Throwable var19) {
                      var3.addSuppressed(var19);
                   }
                } else {
@@ -419,7 +419,7 @@ public class TestTryWithResourcesReturn {
                }
 
                o = s.next();// 109
-            } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var57) {// 102
+            } catch (Throwable var57) {// 102
                var10 = var57;
                throw var57;
             } finally {
@@ -427,7 +427,7 @@ public class TestTryWithResourcesReturn {
                   if (var10 != null) {
                      try {
                         s.close();
-                     } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var56) {
+                     } catch (Throwable var56) {
                         var10.addSuppressed(var56);
                      }
                   } else {
@@ -443,7 +443,7 @@ public class TestTryWithResourcesReturn {
                if (var8 != null) {
                   try {
                      s2.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var55) {
+                  } catch (Throwable var55) {
                      var8.addSuppressed(var55);
                   }
                } else {
@@ -459,7 +459,7 @@ public class TestTryWithResourcesReturn {
             if (var6 != null) {
                try {
                   scanner.close();
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var54) {
+               } catch (Throwable var54) {
                   var6.addSuppressed(var54);
                }
             } else {
@@ -487,7 +487,7 @@ public class TestTryWithResourcesReturn {
             }
 
             var8 = scanner.next();
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var34) {
+         } catch (Throwable var34) {
             var7 = var34;
             throw var34;
          } finally {
@@ -495,7 +495,7 @@ public class TestTryWithResourcesReturn {
                if (var7 != null) {
                   try {
                      s2.close();
-                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var33) {
+                  } catch (Throwable var33) {
                      var7.addSuppressed(var33);
                   }
                } else {
@@ -511,7 +511,7 @@ public class TestTryWithResourcesReturn {
             if (var5 != null) {
                try {
                   scanner.close();
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var32) {
+               } catch (Throwable var32) {
                   var5.addSuppressed(var32);
                }
             } else {
@@ -535,7 +535,7 @@ public class TestTryWithResourcesReturn {
          }
 
          var6 = scanner.next();
-      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var16) {// 130
+      } catch (Throwable var16) {// 130
          var5 = var16;
          throw var16;
       } finally {
@@ -543,7 +543,7 @@ public class TestTryWithResourcesReturn {
             if (var5 != null) {
                try {
                   scanner.close();// 136
-               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var15) {
+               } catch (Throwable var15) {
                   var5.addSuppressed(var15);
                }
             } else {

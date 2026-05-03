@@ -15,7 +15,7 @@ public class TestTryWithResources {
 
          try {
             fileSystem.getPath("PATH", "TO", "FILE");// 14
-         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var11) {// 13
+         } catch (Throwable var11) {// 13
             var1 = var11;
             throw var11;
          } finally {
