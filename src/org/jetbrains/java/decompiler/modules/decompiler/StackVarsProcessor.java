@@ -970,6 +970,11 @@ public class StackVarsProcessor {
                                                VarVersionPair leftpaar) {
     VarVersionsGraph ssuversions = ssau.getSsuVersions();
 
+    // Don't inline into a phantom node, which is part of a pre/post-increment expression.
+    if (ssuversions.nodes.getWithKey(usedvar).phantomNode != null) {
+      return false;
+    }
+
     SFormsFastMapDirect mapLiveVars = ssau.getLiveVarVersionsMap(usedvar);
     if (mapLiveVars == null) {
       // dummy version, predecessor of a phi node
