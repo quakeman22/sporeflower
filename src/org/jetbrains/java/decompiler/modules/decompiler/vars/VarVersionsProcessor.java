@@ -149,6 +149,10 @@ public class VarVersionsProcessor {
         if (maxType != null && maxType.type == CodeType.CHAR) {
           type = VarType.VARTYPE_CHAR;
         }
+        else if (maxType != null && maxType.type == CodeType.INT) {
+          // Keep plain istore values wide when no bytecode narrowing conversion was observed.
+          type = VarType.VARTYPE_INT;
+        }
         else {
           type = type.type == CodeType.BYTECHAR ? VarType.VARTYPE_BYTE : VarType.VARTYPE_SHORT;
         }

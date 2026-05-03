@@ -1,0 +1,63 @@
+package pkg;
+
+/**
+ * Reproducer for bytecode that stores a normalized int with dup/istore and
+ * immediately compares it as an int. There is no i2b instruction here.
+ */
+super public class TestIntNormalizeNoByteNarrow
+  version 49:0
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Field table:"[I";
+
+public static Method test:"(I)I"
+  stack 3 locals 3
+{
+L0:
+  iload_0;
+  ifge L1;
+  iload_0;
+  sipush 360;
+  iadd;
+  istore_0;
+  goto L0;
+L1:
+  iload_0;
+  sipush 360;
+  if_icmplt L2;
+  iload_0;
+  sipush 360;
+  irem;
+  goto L3;
+L2:
+  iload_0;
+L3:
+  dup;
+  istore_1;
+  bipush 90;
+  if_icmple L4;
+  iload_1;
+  sipush 360;
+  isub;
+  goto L5;
+L4:
+  iload_1;
+L5:
+  istore_2;
+  getstatic Field table:"[I";
+  bipush 90;
+  iload_2;
+  isub;
+  iaload;
+  ireturn;
+}
+
+} // end Class TestIntNormalizeNoByteNarrow
