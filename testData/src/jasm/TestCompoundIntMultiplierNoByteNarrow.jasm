@@ -1,0 +1,55 @@
+package pkg;
+
+/**
+ * Reproducer for an int decimal multiplier that is used in a byte-narrowed
+ * digit expression but updated with plain imul/istore. There is no i2b before
+ * storing local 3.
+ */
+super public class TestCompoundIntMultiplierNoByteNarrow
+  version 49:0
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(II)I"
+  stack 4 locals 5
+{
+  iconst_0;
+  istore_2;
+  iconst_1;
+  istore_3;
+  iconst_0;
+  istore 4;
+L0:
+  iload 4;
+  iload_1;
+  if_icmpge L1;
+  iload_2;
+  iload_0;
+  iload_3;
+  idiv;
+  bipush 10;
+  irem;
+  bipush 58;
+  iadd;
+  i2b;
+  iadd;
+  istore_2;
+  iload_3;
+  bipush 10;
+  imul;
+  istore_3;
+  iinc 4, 1;
+  goto L0;
+L1:
+  iload_2;
+  ireturn;
+}
+
+} // end Class TestCompoundIntMultiplierNoByteNarrow

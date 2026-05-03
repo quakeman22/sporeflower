@@ -519,7 +519,7 @@ public final class SecondaryFunctionsHelper {
 
             if (cond != null && (midlayer == null || midlayer.equals(cond.getExprType())) && isSimple(left, cond)) {
               asexpr.setRight(cond);
-              asexpr.setCondType(func.getFuncType());
+              asexpr.setCondType(func.getFuncType(), midlayer == null ? func.getExprType() : midlayer);
               // changed
               ret = exprent;
             }
@@ -837,7 +837,7 @@ public final class SecondaryFunctionsHelper {
             // TODO: maybe we should be checking for var version equality too?
             if (lhsVar.getIndex() == lhsVarFunc.getIndex()) {
               // If all the checks succeed, set the assignment to be a compound assignment and set the right hand side to be the 2nd part of the function
-              assignment.setCondType(rhsFunc.getFuncType());
+              assignment.setCondType(rhsFunc.getFuncType(), rhsFunc.getExprType());
               assignment.setRight(funcParams.get(1));
               // TODO: doesn't hit all instances, see ClientWorld
 

@@ -16,6 +16,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.CheckTypesResult;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructField;
 import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.struct.gen.generics.GenericClassDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.generics.GenericMethodDescriptor;
@@ -32,6 +33,9 @@ public class AssignmentExprent extends Exprent {
   private Exprent left;
   private Exprent right;
   private FunctionExprent.FunctionType condType = null;
+  // The result type of the original "left op right" bytecode before it was
+  // resugared to "left op= right".
+  private VarType compoundOperationType = null;
 
   public AssignmentExprent(Exprent left, Exprent right, BitSet bytecodeOffsets) {
     super(Type.ASSIGNMENT);
@@ -48,6 +52,10 @@ public class AssignmentExprent extends Exprent {
 
   @Override
   public VarType getExprType() {
+    if (condType != null) {
+      return left.getExprType();
+    }
+
     // join the types on the lattice
     VarType rType = VarType.join(left.getExprType(), right.getExprType());
     // No possible result? Return the left's type.
@@ -65,6 +73,20 @@ public class AssignmentExprent extends Exprent {
 
     VarType typeLeft = left.getExprType();
     VarType typeRight = right.getExprType();
+
+    if (condType != null) {
+      VarType operationType = compoundOperationType;
+      if (operationType == null) {
+        operationType = inferCompoundOperationType(condType, typeLeft, typeRight);
+      }
+
+      if (operationType != null) {
+        result.addExprLowerBound(left, operationType);
+      }
+
+      addCompoundOperandBounds(result, condType, left, right, typeLeft, typeRight);
+      return result;
+    }
 
     if (typeLeft.typeFamily.isGreater(typeRight.typeFamily)) {
       result.addExprLowerBound(right, VarType.findFamilyBottom(typeLeft.typeFamily));
@@ -86,6 +108,70 @@ public class AssignmentExprent extends Exprent {
     return result;
   }
 
+  private static VarType inferCompoundOperationType(FunctionExprent.FunctionType condType, VarType typeLeft, VarType typeRight) {
+    return switch (condType) {
+      case SHL, SHR, USHR, BIT_NOT, NEG -> getPromotedNumericType(typeLeft);
+      case ADD, SUB, MUL, DIV, REM -> getPromotedNumericType(typeLeft, typeRight);
+      case AND, OR, XOR -> typeLeft.type == CodeType.BOOLEAN && typeRight.type == CodeType.BOOLEAN
+        ? VarType.VARTYPE_BOOLEAN
+        : getPromotedNumericType(typeLeft, typeRight);
+      default -> null;
+    };
+  }
+
+  private static VarType getPromotedNumericType(VarType... types) {
+    for (VarType type : types) {
+      if (type.equals(VarType.VARTYPE_DOUBLE)) {
+        return VarType.VARTYPE_DOUBLE;
+      }
+    }
+    for (VarType type : types) {
+      if (type.equals(VarType.VARTYPE_FLOAT)) {
+        return VarType.VARTYPE_FLOAT;
+      }
+    }
+    for (VarType type : types) {
+      if (type.equals(VarType.VARTYPE_LONG)) {
+        return VarType.VARTYPE_LONG;
+      }
+    }
+    return VarType.VARTYPE_INT;
+  }
+
+  private static void addCompoundOperandBounds(
+    CheckTypesResult result,
+    FunctionExprent.FunctionType condType,
+    Exprent left,
+    Exprent right,
+    VarType typeLeft,
+    VarType typeRight
+  ) {
+    switch (condType) {
+      case ADD:
+      case SUB:
+      case MUL:
+      case DIV:
+      case REM:
+      case SHL:
+      case SHR:
+      case USHR:
+        result.addExprLowerBound(left, VarType.VARTYPE_BYTECHAR);
+        result.addExprLowerBound(right, VarType.VARTYPE_BYTECHAR);
+        break;
+      case AND:
+      case OR:
+      case XOR:
+        if (typeLeft.type == CodeType.BOOLEAN && typeRight.type == CodeType.BOOLEAN) {
+          result.addExprLowerBound(left, VarType.VARTYPE_BOOLEAN);
+          result.addExprLowerBound(right, VarType.VARTYPE_BOOLEAN);
+        } else {
+          result.addExprLowerBound(left, VarType.VARTYPE_BYTECHAR);
+          result.addExprLowerBound(right, VarType.VARTYPE_BYTECHAR);
+        }
+        break;
+    }
+  }
+
   @Override
   public List<Exprent> getAllExprents(List<Exprent> lst) {
     lst.add(left);
@@ -95,7 +181,9 @@ public class AssignmentExprent extends Exprent {
 
   @Override
   public Exprent copy() {
-    return new AssignmentExprent(left.copy(), right.copy(), condType, bytecode);
+    AssignmentExprent copy = new AssignmentExprent(left.copy(), right.copy(), condType, bytecode);
+    copy.setCompoundOperationType(compoundOperationType);
+    return copy;
   }
 
   @Override
@@ -282,7 +370,8 @@ public class AssignmentExprent extends Exprent {
     AssignmentExprent as = (AssignmentExprent)o;
     return InterpreterUtil.equalObjects(left, as.getLeft()) &&
            InterpreterUtil.equalObjects(right, as.getRight()) &&
-           condType == as.getCondType();
+           condType == as.getCondType() &&
+           InterpreterUtil.equalObjects(compoundOperationType, as.getCompoundOperationType());
   }
 
   @Override
@@ -374,5 +463,21 @@ public class AssignmentExprent extends Exprent {
 
   public void setCondType(FunctionExprent.FunctionType condType) {
     this.condType = condType;
+    if (condType == null) {
+      this.compoundOperationType = null;
+    }
+  }
+
+  public void setCondType(FunctionExprent.FunctionType condType, VarType compoundOperationType) {
+    this.condType = condType;
+    this.compoundOperationType = compoundOperationType;
+  }
+
+  public VarType getCompoundOperationType() {
+    return compoundOperationType;
+  }
+
+  public void setCompoundOperationType(VarType compoundOperationType) {
+    this.compoundOperationType = compoundOperationType;
   }
 }
