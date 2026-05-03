@@ -18,7 +18,7 @@ public class RenameMembersConflictRegressionTest extends DecompileRegressionTest
   }
 
   @Test
-  public void testRenameMembersConflictResolutionKeepsRunAndValidConstructorSyntax() throws IOException {
+  public void testRenameMembersConflictResolutionKeepsRunOverloadsAndValidConstructorSyntax() throws IOException {
     Path hasCoords = writeSource("ren/HasCoords.java", """
 package ren;
 
@@ -85,8 +85,8 @@ public final class Factory {
     assertTrue(unitContent.contains("public void run()"), unitContent);
     assertFalse(unitContent.contains("renamed from: run () void"), unitContent);
     assertTrue(unitContent.contains("public int a()"), unitContent);
-    assertTrue(Pattern.compile("public int method_\\d+\\(int").matcher(unitContent).find(), unitContent);
-    assertFalse(Pattern.compile("public int a\\(int").matcher(unitContent).find(), unitContent);
+    assertTrue(Pattern.compile("public int a\\(int").matcher(unitContent).find(), unitContent);
+    assertFalse(Pattern.compile("public int method_\\d+\\(int").matcher(unitContent).find(), unitContent);
 
     assertTrue(ifaceContent.contains("int field_0 = 1;"), ifaceContent);
     assertTrue(ifaceContent.contains("int field_1 = 2;"), ifaceContent);
