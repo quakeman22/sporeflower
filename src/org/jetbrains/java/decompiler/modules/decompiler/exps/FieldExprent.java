@@ -144,6 +144,10 @@ public class FieldExprent extends Exprent {
   private boolean isAmbiguous() {
     MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
     if (method != null) {
+      if (method.varproc != null && method.varproc.getVarNames().contains(name)) {
+        return true;
+      }
+
       StructLocalVariableTableAttribute attr = method.methodStruct.getLocalVariableAttr();
       if (attr != null) {
         return attr.containsName(name);

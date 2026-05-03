@@ -1,0 +1,25 @@
+super public final class TestMalformedTopLevelInnerOwner
+  version 49:0
+{
+public static Field format:"LTestMalformedTopLevelInnerFormat;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method make:"()LTestMalformedTopLevelInnerFormat;"
+  stack 2 locals 0
+{
+  new class TestMalformedTopLevelInnerFormat;
+  dup;
+  invokespecial Method TestMalformedTopLevelInnerFormat."<init>":"()V";
+  areturn;
+}
+
+public static InnerClass class TestMalformedTopLevelInnerFormat of class TestMalformedTopLevelInnerOwner;
+
+} // end Class TestMalformedTopLevelInnerOwner

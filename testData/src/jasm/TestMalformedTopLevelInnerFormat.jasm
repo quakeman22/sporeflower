@@ -1,0 +1,19 @@
+super public final class TestMalformedTopLevelInnerFormat
+  version 49:0
+{
+public Field value:I;
+
+public Method "<init>":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  bipush 10;
+  putfield Field value:"I";
+  return;
+}
+
+public static InnerClass class TestMalformedTopLevelInnerFormat of class TestMalformedTopLevelInnerOwner;
+
+} // end Class TestMalformedTopLevelInnerFormat

@@ -199,7 +199,7 @@ public class ClassesProcessor implements CodeConstants {
                 continue;  // invalid name or self reference
               }
               if (DecompilerContext.getOption(IFernflowerPreferences.VALIDATE_INNER_CLASSES_NAMES) &&
-                  rec.type == ClassNode.Type.MEMBER && !innerName.equals(enclClassName + '$' + entry.simpleName)) {
+                  !hasValidNestedClassName(entry, rec, innerName, enclClassName)) {
                 continue;  // not a real inner class
               }
 
@@ -367,6 +367,18 @@ public class ClassesProcessor implements CodeConstants {
         }
       }
     }
+  }
+
+  private static boolean hasValidNestedClassName(StructInnerClassesAttribute.Entry entry, Inner rec, String innerName, String enclClassName) {
+    if (rec.type == ClassNode.Type.MEMBER) {
+      return innerName.equals(enclClassName + '$' + entry.simpleName);
+    }
+
+    if (rec.type == ClassNode.Type.LOCAL || rec.type == ClassNode.Type.ANONYMOUS) {
+      return innerName.startsWith(enclClassName + '$');
+    }
+
+    return true;
   }
 
   private static boolean isAnonymous(StructClass cl, StructClass enclosingCl) {

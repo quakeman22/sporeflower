@@ -172,11 +172,6 @@ public class ClassWrapper {
       methods.addWithKey(methodWrapper, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
 
       if (error == null) {
-        // rename vars so that no one has the same name as a field
-        VarNamesCollector namesCollector = new VarNamesCollector();
-        classStruct.getFields().forEach(f -> namesCollector.addName(f.getName()));
-        varProc.refreshVarNames(namesCollector);
-
         // if debug information present and should be used
         if (DecompilerContext.getOption(IFernflowerPreferences.USE_DEBUG_VAR_NAMES)) {
           StructLocalVariableTableAttribute attr = mt.getLocalVariableAttr();
