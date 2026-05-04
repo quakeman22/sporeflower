@@ -825,7 +825,11 @@ public class InvocationExprent extends Exprent {
           // TODO: better fix may be to change equals to isSuperSet? all anonymous classes are superset of Object
           boolean needsQualifierCast = ExprProcessor.needsReferenceNarrowingCast(leftType, rightType)
             || needsPrivateSpecialInvocationQualifierCast(leftType, rightType);
-          if (needsQualifierCast && (instNode == null || instNode.type != ClassNode.Type.ANONYMOUS)) {
+          if (rightType.type == CodeType.NULL) {
+            // Bytecode can use a raw null receiver because the method reference carries
+            // the static receiver type. Java source needs the type made explicit.
+            appendInstCast(buf, leftType, res);
+          } else if (needsQualifierCast && (instNode == null || instNode.type != ClassNode.Type.ANONYMOUS)) {
             appendInstCast(buf, leftType, res);
           } else if (remappedInstType != null) {
             // If we have a remap inst type, do a cast
