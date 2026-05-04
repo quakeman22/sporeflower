@@ -7,6 +7,7 @@ import org.jetbrains.java.decompiler.main.extern.IVariableNameProvider;
 import org.jetbrains.java.decompiler.main.extern.IVariableNamingFactory;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.NewClassNameBuilder;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
@@ -70,7 +71,8 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     boolean escapedNames = hasEscapedNamesProperty(lines);
 
     Map<String, String> classRenames = collectClassRenames(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames);
-    ParsedMembers parsed = parseMembers(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames, classRenames);
+    Map<String, String> descriptorSourceClassRenames = collectClassRenames(lines, mappingPath, header, 0, sourceNamespaceIndex, escapedNames);
+    ParsedMembers parsed = parseMembers(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames, classRenames, descriptorSourceClassRenames);
 
     return new Tiny2IdentifierRenamer(
       Collections.unmodifiableMap(classRenames),
@@ -201,7 +203,8 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     int sourceNamespaceIndex,
     int targetNamespaceIndex,
     boolean escapedNames,
-    Map<String, String> classRenames
+    Map<String, String> classRenames,
+    Map<String, String> descriptorSourceClassRenames
   ) throws IOException {
     Map<MemberKey, String> fieldRenames = new LinkedHashMap<>();
     Map<MemberKey, String> methodRenames = new LinkedHashMap<>();
@@ -249,6 +252,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
         if ("f".equals(kind)) {
           ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "field");
           String descriptor = decodeTinyString(columns[1], escapedNames, mappingPath, lineNo, "field descriptor");
+          descriptor = remapFieldDescriptor(descriptor, descriptorSourceClassRenames);
           String fromName = decodeTinyString(columns[2 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "field source name");
           String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "field target name");
           addRename(fieldRenames, new MemberKey(currentClass, fromName, descriptor), fromName, toName, mappingPath, lineNo, "field");
@@ -256,6 +260,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
         else if ("m".equals(kind)) {
           ensureColumns(columns, 2 + header.namespaces().size(), mappingPath, lineNo, "method");
           String descriptor = decodeTinyString(columns[1], escapedNames, mappingPath, lineNo, "method descriptor");
+          descriptor = remapMethodDescriptor(descriptor, descriptorSourceClassRenames);
           String fromName = decodeTinyString(columns[2 + sourceNamespaceIndex], escapedNames, mappingPath, lineNo, "method source name");
           String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "method target name");
 
@@ -462,8 +467,28 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   }
 
   private static String remapMethodDescriptor(String descriptor, Map<String, String> classMap) {
+    if (classMap.isEmpty()) {
+      return descriptor;
+    }
+
     try {
       MethodDescriptor parsed = MethodDescriptor.parseDescriptor(descriptor);
+      NewClassNameBuilder builder = classMap::get;
+      String rebuilt = parsed.buildNewDescriptor(builder);
+      return rebuilt != null ? rebuilt : descriptor;
+    }
+    catch (RuntimeException ex) {
+      return descriptor;
+    }
+  }
+
+  private static String remapFieldDescriptor(String descriptor, Map<String, String> classMap) {
+    if (classMap.isEmpty()) {
+      return descriptor;
+    }
+
+    try {
+      FieldDescriptor parsed = FieldDescriptor.parseDescriptor(descriptor);
       NewClassNameBuilder builder = classMap::get;
       String rebuilt = parsed.buildNewDescriptor(builder);
       return rebuilt != null ? rebuilt : descriptor;

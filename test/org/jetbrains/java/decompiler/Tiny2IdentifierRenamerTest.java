@@ -71,6 +71,34 @@ c\taf\tafInter\tdefpackage/GameEngine
   }
 
   @Test
+  public void testTiny2MappingRemapsMemberDescriptorsWhenSourceNamespaceIsNotFirst() throws IOException {
+    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
+    try {
+      Files.writeString(mapping, """
+tiny\t2\t0\tofficial\tintermediary\tnamed
+c\ta\tclass_Entity\tpkg/Entity
+c\tb\tclass_World\tpkg/World
+\tf\tLa;\ta\tfield_1\tentity
+\tm\t(La;)Lb;\ta\tmethod_1\tcreate
+\t\tp\t1\tp0\tparam_0\tentityType
+""", StandardCharsets.UTF_8);
+
+      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "intermediary", "named");
+
+      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "class_World", "field_1", "Lclass_Entity;"));
+      assertEquals("entity", renamer.getNextFieldName("class_World", "field_1", "Lclass_Entity;"));
+
+      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
+      assertEquals("create", renamer.getNextMethodName("class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
+
+      assertEquals("entityType", renamer.getParameterRename("class_World", "method_1", "(Lclass_Entity;)Lclass_World;", 1));
+      assertEquals("entityType", renamer.getParameterRename("pkg/World", "create", "(Lpkg/Entity;)Lpkg/World;", 1));
+    } finally {
+      Files.deleteIfExists(mapping);
+    }
+  }
+
+  @Test
   public void testTiny2MappingRejectsConflictingDuplicates() throws IOException {
     Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
     try {
