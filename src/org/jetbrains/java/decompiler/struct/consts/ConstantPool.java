@@ -269,7 +269,13 @@ public class ConstantPool implements NewClassNameBuilder {
         continue;
       }
 
+      // A renamed inherited member must not rewrite a reference whose constant-pool owner
+      // already declares the exact original member.
       if (isField && classDeclaresField(cl, name, descriptor)) {
+        return null;
+      }
+
+      if (!isField && classDeclaresMethod(cl, name, descriptor)) {
         return null;
       }
 
@@ -297,6 +303,15 @@ public class ConstantPool implements NewClassNameBuilder {
 
     String mappedDescriptor = buildNewDescriptor(true, descriptor);
     return mappedDescriptor != null && cl.getField(name, mappedDescriptor) != null;
+  }
+
+  private boolean classDeclaresMethod(StructClass cl, String name, String descriptor) {
+    if (cl.getMethod(name, descriptor) != null) {
+      return true;
+    }
+
+    String mappedDescriptor = buildNewDescriptor(false, descriptor);
+    return mappedDescriptor != null && cl.getMethod(name, mappedDescriptor) != null;
   }
 
   private String buildNewDescriptor(boolean isField, String descriptor) {

@@ -30,11 +30,7 @@ public class ConverterHelper implements IIdentifierRenamer {
   @Override
   public boolean toBeRenamed(Type elementType, String className, String element, String descriptor) {
     String value = elementType == Type.ELEMENT_CLASS ? className : element;
-    if (value == null || value.isEmpty()) {
-      return true;
-    }
-
-    if (!isValidIdentifier(elementType == Type.ELEMENT_METHOD, value) || KEYWORDS.contains(value)) {
+    if (mustRenameForJava(elementType, value)) {
       return true;
     }
 
@@ -44,6 +40,24 @@ public class ConverterHelper implements IIdentifierRenamer {
     }
 
     return false;
+  }
+
+  public static boolean mustRenameForJava(Type elementType, String value) {
+    if (value == null || value.isEmpty()) {
+      return true;
+    }
+
+    if (elementType == Type.ELEMENT_CLASS) {
+      String[] parts = value.split("/");
+      for (String part : parts) {
+        if (part.isEmpty() || !isValidIdentifier(false, part) || KEYWORDS.contains(part) || isReservedWindowsNamespace(part)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    return !isValidIdentifier(elementType == Type.ELEMENT_METHOD, value) || KEYWORDS.contains(value);
   }
 
   /**
@@ -79,6 +93,10 @@ public class ConverterHelper implements IIdentifierRenamer {
 
     return true;
 
+  }
+
+  private static boolean isReservedWindowsNamespace(String value) {
+    return RESERVED_WINDOWS_NAMESPACE.contains(value.toLowerCase(Locale.ENGLISH));
   }
 
   // TODO: consider possible conflicts with not renamed classes, fields and methods!

@@ -50,6 +50,30 @@ c\taf\tdefpackage/GameEngine
   }
 
   @Test
+  public void testTiny2KeepsUnmappedLegalNamesAndFallsBackForJavaKeywords() throws IOException {
+    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
+    try {
+      Files.writeString(mapping, """
+tiny\t2\t0\tofficial\tnamed
+""", StandardCharsets.UTF_8);
+
+      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+
+      assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "C", "a", "I"));
+      assertEquals("a", renamer.getNextFieldName("C", "a", "I"));
+      assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "C", "b", "()V"));
+      assertEquals("b", renamer.getNextMethodName("C", "b", "()V"));
+
+      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "C", "do", "I"));
+      assertEquals("field_0", renamer.getNextFieldName("C", "do", "I"));
+      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "C", "do", "()V"));
+      assertEquals("method_0", renamer.getNextMethodName("C", "do", "()V"));
+    } finally {
+      Files.deleteIfExists(mapping);
+    }
+  }
+
+  @Test
   public void testTiny2MappingResolvesConfiguredNamespaces() throws IOException {
     Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
     try {

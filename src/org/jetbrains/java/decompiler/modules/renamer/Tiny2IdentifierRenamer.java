@@ -36,6 +36,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   private final Map<MemberKey, String> methodRenames;
   private final Map<MemberKey, Map<Integer, String>> parameterRenames;
   private final int parameterEntryCount;
+  private final ConverterHelper compilerFallbackRenamer = new ConverterHelper();
 
   private final Map<String, Integer> classRenameAttempts = new HashMap<>();
   private final Map<MemberKey, Integer> fieldRenameAttempts = new HashMap<>();
@@ -117,14 +118,18 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       return false;
     }
 
+    // Tiny entries are intentional human names. Unmapped legal bytecode names should stay visible;
+    // only mapped names and names Java cannot compile flow through the renamer.
     return switch (elementType) {
-      case ELEMENT_CLASS -> classRenames.containsKey(className);
-      case ELEMENT_FIELD -> element != null && descriptor != null && fieldRenames.containsKey(new MemberKey(className, element, descriptor));
+      case ELEMENT_CLASS -> classRenames.containsKey(className) || ConverterHelper.mustRenameForJava(elementType, className);
+      case ELEMENT_FIELD -> element != null
+        && descriptor != null
+        && (fieldRenames.containsKey(new MemberKey(className, element, descriptor)) || ConverterHelper.mustRenameForJava(elementType, element));
       case ELEMENT_METHOD -> element != null
         && descriptor != null
         && !CodeConstants.INIT_NAME.equals(element)
         && !CodeConstants.CLINIT_NAME.equals(element)
-        && methodRenames.containsKey(new MemberKey(className, element, descriptor));
+        && (methodRenames.containsKey(new MemberKey(className, element, descriptor)) || ConverterHelper.mustRenameForJava(elementType, element));
     };
   }
 
@@ -132,7 +137,10 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   public String getNextClassName(String fullName, String shortName) {
     String mapped = classRenames.get(fullName);
     if (mapped == null) {
-      return shortName != null ? shortName : fullName;
+      if (!ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_CLASS, fullName)) {
+        return shortName != null ? shortName : fullName;
+      }
+      return compilerFallbackRenamer.getNextClassName(fullName, shortName);
     }
     return withRetrySuffix(mapped, classRenameAttempts.merge(fullName, 1, Integer::sum));
   }
@@ -142,7 +150,10 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     MemberKey key = new MemberKey(className, field, descriptor);
     String mapped = fieldRenames.get(key);
     if (mapped == null) {
-      return field;
+      if (!ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_FIELD, field)) {
+        return field;
+      }
+      return compilerFallbackRenamer.getNextFieldName(className, field, descriptor);
     }
     return withRetrySuffix(mapped, fieldRenameAttempts.merge(key, 1, Integer::sum));
   }
@@ -152,7 +163,10 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     MemberKey key = new MemberKey(className, method, descriptor);
     String mapped = methodRenames.get(key);
     if (mapped == null) {
-      return method;
+      if (!ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_METHOD, method)) {
+        return method;
+      }
+      return compilerFallbackRenamer.getNextMethodName(className, method, descriptor);
     }
     return withRetrySuffix(mapped, methodRenameAttempts.merge(key, 1, Integer::sum));
   }

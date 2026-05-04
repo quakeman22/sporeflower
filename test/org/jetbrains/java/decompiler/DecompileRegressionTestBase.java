@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
@@ -147,5 +148,37 @@ public abstract class DecompileRegressionTestBase {
         .filter(p -> p.getFileName().toString().endsWith(".java"))
         .toList();
     }
+  }
+
+  protected static void renameUtf8Constant(Path classFile, String from, String to) throws IOException {
+    byte[] fromBytes = from.getBytes(StandardCharsets.UTF_8);
+    byte[] toBytes = to.getBytes(StandardCharsets.UTF_8);
+    assertTrue(fromBytes.length == toBytes.length, "Replacement must keep the classfile UTF8 length unchanged");
+
+    renameUtf8ConstantBytes(classFile, fromBytes, toBytes);
+  }
+
+  protected static void renameUtf8Constant(Path classFile, char from, char to) throws IOException {
+    renameUtf8ConstantBytes(classFile, new byte[]{(byte)from}, new byte[]{(byte)to});
+  }
+
+  private static void renameUtf8ConstantBytes(Path classFile, byte[] from, byte[] to) throws IOException {
+    byte[] bytes = Files.readAllBytes(classFile);
+    boolean replaced = false;
+
+    for (int i = 0; i <= bytes.length - from.length - 2; i++) {
+      if (bytes[i] != 0 || Byte.toUnsignedInt(bytes[i + 1]) != from.length) {
+        continue;
+      }
+
+      if (Arrays.equals(bytes, i + 2, i + 2 + from.length, from, 0, from.length)) {
+        System.arraycopy(to, 0, bytes, i + 2, to.length);
+        replaced = true;
+        break;
+      }
+    }
+
+    assertTrue(replaced, "Missing UTF8 constant '" + new String(from, StandardCharsets.UTF_8) + "' in " + classFile);
+    Files.write(classFile, bytes);
   }
 }
