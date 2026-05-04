@@ -196,10 +196,12 @@ public final class InitializerProcessor {
       }
 
       List<FieldExprent> notInlined = new ArrayList<>();
+      boolean seenRetainedClinitExprent = false;
 
       Iterator<Exprent> itr = firstData.getExprents().iterator();
       while (itr.hasNext()) {
         Exprent exprent = itr.next();
+        boolean removedExprent = false;
 
         if (exprent instanceof AssignmentExprent) {
           AssignmentExprent assignExpr = (AssignmentExprent)exprent;
@@ -211,12 +213,13 @@ public final class InitializerProcessor {
               // interfaces fields should always be initialized inline
               String keyField = InterpreterUtil.makeUniqueKey(fExpr.getName(), fExpr.getDescriptor().descriptorString);
               boolean exprentIndependent = isExprentIndependent(fExpr, assignExpr.getRight(), method, cl, whitelist, multiAssign, notInlined, cl.getFields().getIndexByKey(keyField), true);
-              if (inlineInitializers || exprentIndependent) {
+              if (inlineInitializers || (exprentIndependent && !seenRetainedClinitExprent)) {
                 if (!wrapper.getStaticFieldInitializers().containsKey(keyField)) {
                   if (exprentIndependent) {
                     wrapper.getStaticFieldInitializers().addWithKey(assignExpr.getRight(), keyField);
                     whitelist.add(keyField);
                     itr.remove();
+                    removedExprent = true;
                   } else { //inlineInitializers
                     if (assignExpr.getRight() instanceof NewExprent){
                       NewExprent newExprent = (NewExprent) assignExpr.getRight();
@@ -232,6 +235,7 @@ public final class InitializerProcessor {
                         wrapper.getStaticFieldInitializers().addWithKey(assignExpr.getRight(), keyField);
                         whitelist.add(keyField);
                         itr.remove();
+                        removedExprent = true;
                       } else {
 //                        DecompilerContext.getLogger().writeMessage("Don't know how to handle non independent "+assignExpr.getRight().getClass().getName(), IFernflowerLogger.Severity.ERROR);
                       }
@@ -254,6 +258,10 @@ public final class InitializerProcessor {
           }
         } else if (inlineInitializers && cl.hasModifier(CodeConstants.ACC_INTERFACE)) {
 //          DecompilerContext.getLogger().writeMessage("Non assignment found in initializer when we're needing to inline all", IFernflowerLogger.Severity.ERROR);
+        }
+
+        if (!inlineInitializers && !removedExprent) {
+          seenRetainedClinitExprent = true;
         }
       }
       if (exprentsToRemove.size() > 0){
