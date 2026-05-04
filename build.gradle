@@ -37,6 +37,15 @@ allprojects {
 
   test {
     useJUnitPlatform()
+
+    // `gradlew test --tests root.project.Test` also runs subproject test tasks
+    // named `test`. Those subprojects should not fail only because the root
+    // test filter does not match any of their classes.
+    if (project != rootProject) {
+      filter {
+        setFailOnNoMatchingTests(false)
+      }
+    }
   }
 
   tasks.withType(JavaCompile).configureEach {

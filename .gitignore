@@ -18,6 +18,7 @@ bin
 .vscode
 
 ## Common
+/.codex/
 /testData/classes/java*/
 /testData/classes/jasm/
 /testData/classes/groovy/
