@@ -3,9 +3,12 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ByteArrayMergeRegressionTest extends DecompileRegressionTestBase {
@@ -37,5 +40,19 @@ public class TestByteArrayMerge {
     assertTrue(Pattern.compile("\\bbyte\\[]\\s+var\\d+\\s*=\\s*null;").matcher(content).find(), content);
     assertFalse(Pattern.compile("\\bB\\s+var\\d+\\s*=\\s*null;").matcher(content).find(), content);
     assertFalse(content.contains("(Object[])"), content);
+  }
+
+  @Test
+  public void testLegacyStackMapObjectFrameKeepsPrimitiveArrayMergeAtObject() throws IOException {
+    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestPrimitiveArrayObjectMergeStackMap.class");
+    String content = assertTimeout(Duration.ofSeconds(10), () ->
+      decompileClassFile(classFile, "pkg/TestPrimitiveArrayObjectMergeStackMap.java"));
+
+    assertTrue(content.contains("public static Object decode"), content);
+    assertFalse(Pattern.compile("\\bObject\\[]\\s+var\\d+;").matcher(content).find(), content);
+
+    assertTimeout(Duration.ofSeconds(10), () -> {
+      recompile();
+    });
   }
 }

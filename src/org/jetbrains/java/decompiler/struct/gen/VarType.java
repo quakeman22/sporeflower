@@ -190,7 +190,7 @@ public class VarType {
 
   public VarType resizeArrayDim(int newArrayDim) {
     ValidationHelper.assertTrue(newArrayDim >= 0, "Can't have an array of negative size!");
-    return new VarType(type, newArrayDim, value, typeFamily, stackSize);
+    return new VarType(type, newArrayDim, value);
   }
 
   @Override
@@ -328,9 +328,9 @@ public class VarType {
   //                                  BOT
   //
   // "Implementors" are any class that extends Object, so it can be regular
-  // classes, all arrays, enums, records, et cetera. Arrays match the Object
-  // lattice. If the size of the arrays are the same, then the array types
-  // have the same relation as their base types.
+  // classes, all arrays, enums, records, et cetera. Array covariance follows
+  // Java assignability rules: reference component arrays are covariant, while
+  // primitive component arrays are only related to their exact type and Object.
   //
   // The final type family is UNKNOWN, the family of bottom types. This poses
   // a conundrum for the lattice, as it would only consist of the bottom.
@@ -346,22 +346,17 @@ public class VarType {
 
   // Is 'this' higher in the lattice when compared to 'other'?
   public boolean higherInLatticeThan(VarType other) {
+    if (this.equals(other)) {
+      return false;
+    }
+
     // If other is BOT, and we are not BOT, we must necessarily be higher in the lattice
     if (other.type == CodeType.UNKNOWN && type != CodeType.UNKNOWN) {
       return true;
     }
 
-    if (this.arrayDim > 0 && this.arrayDim == other.arrayDim) {
-      // Testing against two arrays
-
-      // Arrays are covariant, check their bases
-      return this.resizeArrayDim(0).higherInLatticeThan(other.resizeArrayDim(0));
-    } else if (other.arrayDim > 0) {
-      // If the other is an array, only Object is higher in the lattice than the other
-      return this.equals(VARTYPE_OBJECT);
-    } else if (arrayDim > 0) {
-      // If the other is not an array but we are, the only way we can be higher in the lattice is if the other is null (close to bottom)
-      return (other.type == CodeType.NULL);
+    if (this.arrayDim > 0 || other.arrayDim > 0) {
+      return this.isArraySupertypeOf(other);
     }
 
     boolean res = false;
@@ -409,6 +404,30 @@ public class VarType {
     }
 
     return res;
+  }
+
+  private boolean isArraySupertypeOf(VarType other) {
+    if (other.type == CodeType.NULL) {
+      return arrayDim > 0 || type == CodeType.OBJECT;
+    }
+
+    if (arrayDim == 0) {
+      return equals(VARTYPE_OBJECT) && other.arrayDim > 0;
+    }
+
+    if (other.arrayDim == 0) {
+      return false;
+    }
+
+    VarType thisComponent = decreaseArrayDim();
+    VarType otherComponent = other.decreaseArrayDim();
+    return isReferenceArrayComponent(thisComponent)
+      && isReferenceArrayComponent(otherComponent)
+      && thisComponent.higherEqualInLatticeThan(otherComponent);
+  }
+
+  private static boolean isReferenceArrayComponent(VarType type) {
+    return type.arrayDim > 0 || type.type == CodeType.OBJECT || type.type == CodeType.GENVAR;
   }
 
   // For generic types 't' and 'other', should we check the base type to determine if t <: other?
@@ -521,6 +540,10 @@ public class VarType {
             return type1;
           }
 
+          if (type1.arrayDim > 0 || type2.arrayDim > 0) {
+            return joinArrayTypes(type1, type2);
+          }
+
           // TODO: can make an intersection type?
           StructClass cl = DecompilerContext.getStructContext().findCommonAncestor(type1.value, type2.value);
           if (cl != null) {
@@ -532,6 +555,25 @@ public class VarType {
     }
 
     return null;
+  }
+
+  private static VarType joinArrayTypes(VarType type1, VarType type2) {
+    if (type1.arrayDim == 0 || type2.arrayDim == 0) {
+      return VARTYPE_OBJECT;
+    }
+
+    VarType component1 = type1.decreaseArrayDim();
+    VarType component2 = type2.decreaseArrayDim();
+    if (!isReferenceArrayComponent(component1) || !isReferenceArrayComponent(component2)) {
+      return VARTYPE_OBJECT;
+    }
+
+    VarType componentJoin = join(component1, component2);
+    if (componentJoin == null || !isReferenceArrayComponent(componentJoin)) {
+      return VARTYPE_OBJECT;
+    }
+
+    return componentJoin.resizeArrayDim(componentJoin.arrayDim + 1);
   }
 
   public static VarType findFamilyBottom(TypeFamily family) {

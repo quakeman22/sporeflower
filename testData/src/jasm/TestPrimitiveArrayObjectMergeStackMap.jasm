@@ -1,0 +1,47 @@
+package pkg;
+
+super public class TestPrimitiveArrayObjectMergeStackMap
+  version 45:3
+{
+
+public static Method decode:"(I)Ljava/lang/Object;"
+  stack 2 locals 3
+{
+  aconst_null;
+  astore_1;
+  iload_0;
+  ifne L1;
+  iconst_1;
+  newarray byte;
+  astore_2;
+  aload_2;
+  astore_1;
+  goto Lret;
+L1:
+  stack_frame_type full;
+  locals_map int, null;
+  iload_0;
+  iconst_1;
+  if_icmpne L2;
+  iconst_1;
+  newarray int;
+  astore_2;
+  aload_2;
+  astore_1;
+  goto Lret;
+L2:
+  stack_frame_type full;
+  locals_map int, null;
+  iconst_1;
+  anewarray class java/lang/Object;
+  astore_2;
+  aload_2;
+  astore_1;
+Lret:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object;
+  aload_1;
+  areturn;
+}
+
+} // end Class TestPrimitiveArrayObjectMergeStackMap

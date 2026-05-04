@@ -45,7 +45,11 @@ public class VarTypeProcessor {
     resetExprentTypes(graph);
 
     // Run the variable types process to a fixed point (i.e. until no types change)
+    int iterations = 0;
     while (!processVarTypes(graph)) {
+      if (++iterations > 10_000) {
+        throw new IllegalStateException("Variable type inference did not converge: lower=" + lowerBounds + ", upper=" + upperBounds);
+      }
       // TODO: should validate for bounds failure every loop?
     }
 
