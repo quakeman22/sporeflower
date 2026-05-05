@@ -4,6 +4,7 @@
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
 import org.jetbrains.java.decompiler.main.DecompilerContext;
+import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.plugins.PluginImplementationException;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.SFormsConstructor;
@@ -148,6 +149,8 @@ public class FunctionExprent extends Exprent {
   private final List<Exprent> lstOperands;
   private boolean needsCast = true;
   private boolean disableNewlineGroupCreation = false;
+  private VarType legacyTernaryReferenceCastType;
+  private int legacyTernaryReferenceCastOperand = -1;
 
   public FunctionExprent(FunctionType funcType, ListStack<Exprent> stack, BitSet bytecodeOffsets) {
     this(funcType, new ArrayList<>(), bytecodeOffsets);
@@ -281,6 +284,9 @@ public class FunctionExprent extends Exprent {
 
       return getExprType();
     } else if (funcType == FunctionType.TERNARY) {
+      legacyTernaryReferenceCastType = null;
+      legacyTernaryReferenceCastOperand = -1;
+
       VarType type1 = lstOperands.get(1).getInferredExprType(upperBound);
       VarType type2 = lstOperands.get(2).getInferredExprType(upperBound);
 
@@ -297,6 +303,11 @@ public class FunctionExprent extends Exprent {
         union = VarType.VARTYPE_INT;
       }
 
+      if (shouldCastLegacyTernaryReferenceBranch(upperBound, type1, type2)) {
+        legacyTernaryReferenceCastType = upperBound;
+        legacyTernaryReferenceCastOperand = upperBound.equals(type1) ? 2 : 1;
+      }
+
       return union != null ? union : getExprType();
     } else if (funcType == FunctionType.INSTANCEOF) {
       for (Exprent oper : lstOperands) {
@@ -311,6 +322,22 @@ public class FunctionExprent extends Exprent {
     }
 
     return getExprType();
+  }
+
+  private static boolean shouldCastLegacyTernaryReferenceBranch(VarType upperBound, VarType type1, VarType type2) {
+    if (!DecompilerContext.getOption(IFernflowerPreferences.LEGACY_TERNARY_REFERENCE_CASTS)) {
+      return false;
+    }
+
+    if (upperBound == null || upperBound.type != CodeType.OBJECT || type1.type != CodeType.OBJECT || type2.type != CodeType.OBJECT) {
+      return false;
+    }
+
+    if (!upperBound.higherEqualInLatticeThan(type1) || !upperBound.higherEqualInLatticeThan(type2)) {
+      return false;
+    }
+
+    return !type1.higherEqualInLatticeThan(type2) && !type2.higherEqualInLatticeThan(type1);
   }
 
   private static boolean areGenericTypesSame(VarType right, VarType upperBound) {
@@ -629,9 +656,9 @@ public class FunctionExprent extends Exprent {
         buf.pushNewlineGroup(indent, 1);
         buf.append(wrapOperandString(lstOperands.get(0), true, indent))
           .appendPossibleNewline(" ").append("? ")
-          .append(wrapOperandString(lstOperands.get(1), true, indent))
+          .append(wrapTernaryBranch(lstOperands.get(1), 1, indent))
           .appendPossibleNewline(" ").append(": ")
-          .append(wrapOperandString(lstOperands.get(2), true, indent));
+          .append(wrapTernaryBranch(lstOperands.get(2), 2, indent));
         buf.popNewlineGroup();
         return buf;
       case INSTANCEOF:
@@ -763,6 +790,25 @@ public class FunctionExprent extends Exprent {
     }
 
     return res;
+  }
+
+  private TextBuffer wrapTernaryBranch(Exprent expr, int operand, int indent) {
+    if (legacyTernaryReferenceCastType != null && legacyTernaryReferenceCastOperand == operand) {
+      TextBuffer res = new TextBuffer();
+      ExprProcessor.getCastedExprent(
+        expr,
+        legacyTernaryReferenceCastType,
+        res,
+        indent,
+        ExprProcessor.NullCastType.DONT_CAST_AT_ALL,
+        true,
+        false,
+        false
+      );
+      return res;
+    }
+
+    return wrapOperandString(expr, true, indent);
   }
 
   private static VarType getMaxVarType(VarType ...arr) {
