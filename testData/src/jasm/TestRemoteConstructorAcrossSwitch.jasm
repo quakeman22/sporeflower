@@ -72,6 +72,20 @@ public static Method makeDupStoreInterleaved:"(I)Lpkg/TestRemoteConstructorAcros
   areturn;
 }
 
+public static Method makeAliasStore:"(I)Lpkg/TestRemoteConstructorAcrossSwitchBox;"
+  stack 3 locals 3
+{
+  new class TestRemoteConstructorAcrossSwitchBox;
+  astore_1;
+  aload_1;
+  astore_2;
+  aload_2;
+  iload_0;
+  invokespecial Method TestRemoteConstructorAcrossSwitchBox."<init>":"(I)V";
+  aload_2;
+  areturn;
+}
+
 public static Method bump:"(I)I"
   stack 2 locals 1
 {

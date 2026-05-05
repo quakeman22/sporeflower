@@ -1060,6 +1060,8 @@ public class SimplifyExprentsHelper {
         for (VarExprent var : allocationVars) {
           allocationPairs.add(new VarVersionPair(var));
         }
+        VarExprent assignmentTarget = getConstructorAssignmentTarget(allocationVars);
+        List<Integer> aliasAssignments = new ArrayList<>();
 
         if (newType.type == CodeType.OBJECT && newType.arrayDim == 0 && newExpr.getConstructor() == null) {
           for (int i = index + 1; i < list.size(); i++) {
@@ -1075,10 +1077,31 @@ public class SimplifyExprentsHelper {
                 newExpr.setConstructor(in);
                 in.setInstance(null);
 
-                VarExprent target = getConstructorAssignmentTarget(allocationVars);
-                list.set(i, new AssignmentExprent(target.copy(), newExpr, as.bytecode));
+                list.set(i, new AssignmentExprent(assignmentTarget.copy(), newExpr, as.bytecode));
+                for (int aliasIndex = aliasAssignments.size() - 1; aliasIndex >= 0; aliasIndex--) {
+                  list.remove((int)aliasAssignments.get(aliasIndex));
+                }
 
                 return true;
+              }
+            }
+
+            if (remote instanceof AssignmentExprent remoteAs && remoteAs.getLeft() instanceof VarExprent remoteLeft) {
+              VarVersionPair remoteLeftPair = new VarVersionPair(remoteLeft);
+              if (remoteAs.getRight() instanceof VarExprent remoteRight &&
+                  !remoteRight.isStack() &&
+                  allocationPairs.contains(new VarVersionPair(remoteRight))) {
+                allocationPairs.add(remoteLeftPair);
+                aliasAssignments.add(i);
+                if (!remoteLeft.isStack()) {
+                  assignmentTarget = remoteLeft;
+                }
+                continue;
+              }
+
+              allocationPairs.remove(remoteLeftPair);
+              if (assignmentTarget.equals(remoteLeft)) {
+                assignmentTarget = getConstructorAssignmentTarget(allocationVars);
               }
             }
 

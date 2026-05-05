@@ -31,6 +31,7 @@ public class RemoteConstructorAcrossSwitchRegressionTest extends DecompileRegres
     assertTrue(content.contains("new TestRemoteConstructorAcrossSwitchBox("), content);
     assertTrue(content.contains("makeDupStore"), content);
     assertTrue(content.contains("makeDupStoreInterleaved"), content);
+    assertTrue(content.contains("makeAliasStore"), content);
 
     recompile();
   }
