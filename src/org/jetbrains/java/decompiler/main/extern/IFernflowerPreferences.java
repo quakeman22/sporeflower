@@ -193,6 +193,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String LEGACY_TERNARY_REFERENCE_CASTS = "legacy-ternary-reference-casts";
 
+  @Name("Legacy Multi-Catch Rendering")
+  @Description("Render shared catch handlers from pre-Java-7 class files as separate catch blocks instead of Java 7 multi-catch.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String LEGACY_MULTI_CATCH = "legacy-multi-catch";
+
   @Name("[Debug] Show hidden statements")
   @Description("Display hidden code blocks for debugging purposes.")
   @ShortName("shs")
@@ -466,6 +471,7 @@ public interface IFernflowerPreferences {
     defaults.put(TRY_LOOP_FIX, "1"); // Try loop fix is stable, and fixes hard to notice bugs
     defaults.put(TERNARY_CONDITIONS, "1"); // Ternary conditions are stable and don't cause many issues currently
     defaults.put(LEGACY_TERNARY_REFERENCE_CASTS, "1");
+    defaults.put(LEGACY_MULTI_CATCH, "1");
     defaults.put(SHOW_HIDDEN_STATEMENTS, "0"); // Extra debugging that isn't useful in most cases
     defaults.put(SIMPLIFY_STACK_SECOND_PASS, "1"); // Generally produces better bytecode, useful to debug if it does something strange
     defaults.put(VERIFY_VARIABLE_MERGES, "0"); // Produces more correct code in rare cases, but hurts code cleanliness in the majority of cases. Default off until a better fix is created.

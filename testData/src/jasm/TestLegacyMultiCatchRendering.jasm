@@ -1,0 +1,39 @@
+package pkg;
+
+super public class TestLegacyMultiCatchRendering
+  version 45:3
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"()V"
+  stack 1 locals 1
+{
+  goto L0;
+  catch t0 java/io/IOException;
+  catch t0 java/lang/ClassNotFoundException;
+    astore_0;
+    aload_0;
+    invokevirtual Method java/lang/Throwable.printStackTrace:"()V";
+    return;
+L0:
+  try t0;
+    getstatic Field pkg/TestLegacyMultiCatchRendering.in:"Ljava/io/InputStream;";
+    invokevirtual Method java/io/InputStream.read:"()I";
+    pop;
+    ldc String "missing.Clazz";
+    invokestatic Method java/lang/Class.forName:"(Ljava/lang/String;)Ljava/lang/Class;";
+    pop;
+    return;
+  endtry t0;
+}
+
+} // end Class TestLegacyMultiCatchRendering

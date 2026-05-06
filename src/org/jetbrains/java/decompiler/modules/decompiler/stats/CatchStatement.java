@@ -2,10 +2,12 @@
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
+import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.CheckedExceptionAnalyzer;
 import org.jetbrains.java.decompiler.modules.decompiler.DecHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
@@ -173,6 +175,7 @@ public class CatchStatement extends Statement {
     buf.append(ExprProcessor.jmpWrapper(first, indent + 1, true));
     buf.appendIndent(indent).append("}");
 
+    boolean splitLegacyMultiCatch = shouldSplitLegacyMultiCatch();
     for (int i = 1; i < stats.size(); i++) {
       Statement stat = stats.get(i);
       // map first instruction storing the exception to the catch statement
@@ -182,8 +185,6 @@ public class CatchStatement extends Statement {
         if (offset > -1) buf.addBytecodeMapping(offset);
       }
 
-      buf.append(" catch (");
-
       List<String> exception_types = exctstrings.get(i - 1);
       CheckedExceptionAnalyzer.CatchRewrite rewrite = exceptionAnalyzer.rewriteCatchTypes(
         first,
@@ -192,40 +193,71 @@ public class CatchStatement extends Statement {
         collectFollowingCatchTypes(exctstrings, i)
       );
       List<String> renderedTypes = rewrite.getRenderedTypes();
-      for (int exc_index = 0; exc_index < renderedTypes.size(); ++exc_index) {
-        String name = ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, renderedTypes.get(exc_index)));
-        if (renderedTypes.size() > 1 && exc_index > 0) { // multi-catch, Java 7 style
-          buf.append(" | ");
-        }
-        buf.append(name);
-      }
-
-      if (rewrite.isRewritten()) {
-        buf.append(" /* $VF: ");
-        buf.append(rewrite.isFallbackUsed() ? "substituted checked catch types: " : "removed unthrowable checked catch types: ");
-        appendTypeListComment(buf, rewrite.getRemovedCheckedTypes());
-        buf.append(" */");
-      }
       renderedCatchTypesSoFar.addAll(renderedTypes);
-
-      buf.append(" ");
 
       VarExprent var = vars.get(i - 1);
 
       validateType(exception_types, var.getVarType());
 
-      // Temporarily set variable as not a definition, since we just wrote the type above
-      try (var v = var.new DefinitionLocker()) {
-        buf.append(var.toJava(indent));
+      if (splitLegacyMultiCatch && renderedTypes.size() > 1) {
+        for (int exc_index = 0; exc_index < renderedTypes.size(); ++exc_index) {
+          appendCatchClause(buf, stat, var, List.of(renderedTypes.get(exc_index)), rewrite, exc_index == 0, indent);
+        }
       }
-
-      buf.append(") {").appendLineSeparator();
-      buf.append(ExprProcessor.jmpWrapper(stat, indent + 1, false)).appendIndent(indent)
-        .append("}");
+      else {
+        appendCatchClause(buf, stat, var, renderedTypes, rewrite, true, indent);
+      }
     }
     buf.appendLineSeparator();
 
     return buf;
+  }
+
+  private static void appendCatchClause(
+    TextBuffer buf,
+    Statement stat,
+    VarExprent var,
+    List<String> renderedTypes,
+    CheckedExceptionAnalyzer.CatchRewrite rewrite,
+    boolean renderRewriteComment,
+    int indent
+  ) {
+    buf.append(" catch (");
+
+    for (int exc_index = 0; exc_index < renderedTypes.size(); ++exc_index) {
+      String name = ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, renderedTypes.get(exc_index)));
+      if (renderedTypes.size() > 1 && exc_index > 0) {
+        buf.append(" | ");
+      }
+      buf.append(name);
+    }
+
+    if (renderRewriteComment && rewrite.isRewritten()) {
+      buf.append(" /* $VF: ");
+      buf.append(rewrite.isFallbackUsed() ? "substituted checked catch types: " : "removed unthrowable checked catch types: ");
+      appendTypeListComment(buf, rewrite.getRemovedCheckedTypes());
+      buf.append(" */");
+    }
+
+    buf.append(" ");
+
+    // Temporarily set variable as not a definition, since we just wrote the type above
+    try (var v = var.new DefinitionLocker()) {
+      buf.append(var.toJava(indent));
+    }
+
+    buf.append(") {").appendLineSeparator();
+    buf.append(ExprProcessor.jmpWrapper(stat, indent + 1, false)).appendIndent(indent)
+      .append("}");
+  }
+
+  private static boolean shouldSplitLegacyMultiCatch() {
+    if (!DecompilerContext.getOption(IFernflowerPreferences.LEGACY_MULTI_CATCH)) {
+      return false;
+    }
+
+    MethodWrapper methodWrapper = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+    return methodWrapper != null && methodWrapper.methodStruct.getBytecodeVersion().major < BytecodeVersion.MAJOR_7;
   }
 
   private void validateType(List<String> exTypes, VarType exVarType) {
