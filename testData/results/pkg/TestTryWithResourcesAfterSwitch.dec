@@ -41,7 +41,7 @@ public class TestTryWithResourcesAfterSwitch {
                System.out.println("f");// 23
             }
       }
-   }// 24
+   }// 25
 
    public void test2() throws Throwable {
       ElementType vvv3 = ElementType.METHOD;// 28
@@ -78,7 +78,7 @@ public class TestTryWithResourcesAfterSwitch {
                System.out.println("f");// 42
             }
       }
-   }// 43
+   }// 44
 }
 
 class 'pkg/TestTryWithResourcesAfterSwitch' {
@@ -168,7 +168,6 @@ class 'pkg/TestTryWithResourcesAfterSwitch' {
       b1      35
       b2      35
       b3      35
-      bf      43
       c4      40
       c5      40
       c6      40
@@ -177,6 +176,7 @@ class 'pkg/TestTryWithResourcesAfterSwitch' {
       c9      40
       ca      40
       cb      40
+      cf      43
    }
 
    method 'test2 ()V' {
@@ -257,7 +257,6 @@ class 'pkg/TestTryWithResourcesAfterSwitch' {
       a7      72
       a8      72
       a9      72
-      b5      80
       ba      77
       bb      77
       bc      77
@@ -266,6 +265,7 @@ class 'pkg/TestTryWithResourcesAfterSwitch' {
       bf      77
       c0      77
       c1      77
+      c5      80
    }
 }
 
@@ -279,7 +279,7 @@ Lines mapping:
 21 <-> 23
 22 <-> 28
 23 <-> 41
-24 <-> 44
+25 <-> 44
 28 <-> 47
 29 <-> 48
 30 <-> 49
@@ -288,7 +288,7 @@ Lines mapping:
 40 <-> 60
 41 <-> 65
 42 <-> 78
-43 <-> 81
+44 <-> 81
 Not mapped:
-25
-44
+24
+43

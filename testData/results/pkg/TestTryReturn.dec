@@ -38,8 +38,8 @@ public class TestTryReturn {
          return;// 28
       }
 
-      System.out.println("suc");// 32 34
-   }
+      System.out.println("suc");// 34
+   }// 35
 
    public boolean testFinally2(Supplier<Boolean> supplier) {
       boolean b;
@@ -49,7 +49,7 @@ public class TestTryReturn {
          System.out.println("Finally");// 42
       }
 
-      return b;// 43 45
+      return b;// 45
    }
 
    public boolean testFinally3(boolean b, boolean c, int a, Supplier<Boolean> supplier) {
@@ -80,7 +80,7 @@ public class TestTryReturn {
          System.out.println("Finally");// 69
       }
 
-      return b;// 70 72
+      return b;// 72
    }
 
    public boolean testFinally5(Supplier<Boolean> supplier) {
@@ -193,7 +193,7 @@ public class TestTryReturn {
    public void testVarWrong() {
       try {
          System.out.println("Hi");// 164
-         return;// 174
+         return;// 175
       } catch (Exception var2) {// 165
          if (var2 == null) {// 166
             System.out.println(var2);// 169
@@ -219,7 +219,7 @@ public class TestTryReturn {
 
          try {
             System.out.println(var4);// 185
-            return;// 195
+            return;// 196
          } catch (Exception var5) {// 186
          } finally {
             System.out.println(var15);// 190
@@ -243,8 +243,8 @@ public class TestTryReturn {
          return;// 203
       }
 
-      System.out.println("post");// 206 208
-   }
+      System.out.println("post");// 208
+   }// 209
 }
 
 class 'pkg/TestTryReturn' {
@@ -318,9 +318,6 @@ class 'pkg/TestTryReturn' {
       15      30
       16      30
       1f      37
-      28      40
-      29      40
-      2a      40
       2c      34
       2d      34
       2e      34
@@ -331,9 +328,13 @@ class 'pkg/TestTryReturn' {
       33      34
       36      40
       37      40
+      38      40
       39      40
       3a      40
       3b      40
+      3c      40
+      3d      40
+      3e      41
    }
 
    method 'testFinally2 (Ljava/util/function/Supplier;)Z' {
@@ -350,7 +351,6 @@ class 'pkg/TestTryReturn' {
       a      46
       b      46
       c      46
-      15      51
       19      48
       1a      48
       1b      48
@@ -360,6 +360,7 @@ class 'pkg/TestTryReturn' {
       1f      48
       20      48
       23      51
+      24      51
    }
 
    method 'testFinally3 (ZZILjava/util/function/Supplier;)Z' {
@@ -442,7 +443,6 @@ class 'pkg/TestTryReturn' {
       c      77
       d      77
       e      77
-      17      82
       1b      79
       1c      79
       1d      79
@@ -452,6 +452,7 @@ class 'pkg/TestTryReturn' {
       21      79
       22      79
       25      82
+      26      82
    }
 
    method 'testFinally5 (Ljava/util/function/Supplier;)Z' {
@@ -628,7 +629,6 @@ class 'pkg/TestTryReturn' {
       5      194
       6      194
       7      194
-      b      195
       e      196
       f      197
       10      197
@@ -647,6 +647,7 @@ class 'pkg/TestTryReturn' {
       25      202
       26      202
       27      202
+      2b      195
    }
 
    method 'testInvalidUse ()V' {
@@ -680,7 +681,6 @@ class 'pkg/TestTryReturn' {
       3d      224
       3e      224
       3f      224
-      4a      221
       4f      227
       50      227
       51      227
@@ -688,6 +688,7 @@ class 'pkg/TestTryReturn' {
       53      227
       54      227
       55      227
+      59      221
    }
 
    method 'returnInCatch ()V' {
@@ -699,9 +700,6 @@ class 'pkg/TestTryReturn' {
       5      234
       6      234
       7      234
-      10      245
-      11      245
-      12      245
       13      236
       14      237
       15      237
@@ -722,9 +720,13 @@ class 'pkg/TestTryReturn' {
       2d      239
       30      245
       31      245
+      32      245
       33      245
       34      245
       35      245
+      36      245
+      37      245
+      38      246
    }
 }
 
@@ -738,11 +740,10 @@ Lines mapping:
 27 <-> 31
 28 <-> 38
 31 <-> 35
-32 <-> 41
 34 <-> 41
+35 <-> 42
 40 <-> 47
 42 <-> 49
-43 <-> 52
 45 <-> 52
 50 <-> 58
 51 <-> 71
@@ -753,7 +754,6 @@ Lines mapping:
 65 <-> 75
 67 <-> 78
 69 <-> 80
-70 <-> 83
 72 <-> 83
 76 <-> 87
 78 <-> 90
@@ -790,7 +790,7 @@ Lines mapping:
 169 <-> 199
 170 <-> 200
 173 <-> 203
-174 <-> 196
+175 <-> 196
 178 <-> 208
 179 <-> 209
 181 <-> 214
@@ -801,24 +801,26 @@ Lines mapping:
 187 <-> 230
 190 <-> 225
 194 <-> 228
-195 <-> 222
+196 <-> 222
 200 <-> 235
 201 <-> 237
 202 <-> 238
 203 <-> 243
 205 <-> 240
-206 <-> 246
 208 <-> 246
+209 <-> 247
 Not mapped:
 20
-35
+32
+43
 61
+70
 84
 103
 118
 153
 157
-175
+174
 191
-196
-209
+195
+206

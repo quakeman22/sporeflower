@@ -214,7 +214,7 @@ public class ExprProcessor implements CodeConstants {
     for (int i = 0; i < seq.length(); i++) {
 
       Instruction instr = seq.getInstr(i);
-      Integer bytecode_offset = block.getOldOffset(i);
+      int bytecode_offset = instr.startOffset;
       BitSet bytecode_offsets = null;
       if (bytecode_offset >= 0) {
         bytecode_offsets = new BitSet();
