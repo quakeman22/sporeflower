@@ -1,0 +1,169 @@
+package pkg;
+
+super public class TestSparseProtectedRangeFinally
+  version 45:3
+{
+
+public static Field records:"[[B";
+public static Field slotRecords:"[[B";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method close:"(Ljava/lang/Object;)V"
+  stack 0 locals 1
+{
+  return;
+}
+
+public static Method findStream:"(I)Ljava/io/DataInputStream;"
+  stack 3 locals 5
+{
+  aconst_null;
+  astore_1;
+  try t_exception;
+  try t_any_body;
+    getstatic Field records:"[[B";
+    arraylength;
+    istore_2;
+    iconst_0;
+    istore_3;
+L_stream_loop:
+    iload_3;
+    iload_2;
+    if_icmpge L_stream_not_found;
+    getstatic Field records:"[[B";
+    iload_3;
+    aaload;
+    dup;
+    astore 4;
+    iconst_0;
+    baload;
+    iload_0;
+    if_icmpne L_stream_next;
+    new class java/io/ByteArrayInputStream;
+    dup;
+    aload 4;
+    invokespecial Method java/io/ByteArrayInputStream."<init>":"([B)V";
+    astore_0;
+    new class java/io/DataInputStream;
+    dup;
+    aload_0;
+    invokespecial Method java/io/DataInputStream."<init>":"(Ljava/io/InputStream;)V";
+    dup;
+    astore_0;
+    invokevirtual Method java/io/DataInputStream.readByte:"()B";
+    pop;
+  endtry t_exception;
+  endtry t_any_body;
+    aload_1;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+    aload_0;
+    areturn;
+L_stream_next:
+  iinc 3, 1;
+  goto L_stream_loop;
+L_stream_not_found:
+  aload_1;
+  invokestatic Method close:"(Ljava/lang/Object;)V";
+  goto L_stream_null;
+
+  catch t_exception java/lang/Exception;
+  try t_any_catch;
+    dup;
+    astore_2;
+    invokevirtual Method java/lang/Throwable.printStackTrace:"()V";
+  endtry t_any_catch;
+    aload_1;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+    goto L_stream_null;
+
+  catch t_any_body #0;
+  catch t_any_catch #0;
+    astore_0;
+    aload_1;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+    aload_0;
+    athrow;
+L_stream_null:
+  aconst_null;
+  areturn;
+}
+
+public static Method findSlot:"(IZ)I"
+  stack 3 locals 4
+{
+  aconst_null;
+  astore_1;
+  try t_slot_any_init;
+    iconst_0;
+    istore_2;
+L_slot_loop:
+    iload_2;
+    iconst_4;
+    if_icmpge L_slot_not_found;
+  endtry t_slot_any_init;
+  try t_slot_exception_first;
+  try t_slot_any_first;
+    getstatic Field slotRecords:"[[B";
+    iload_2;
+    aaload;
+    dup;
+    astore_3;
+    ifnull L_slot_next;
+    aload_3;
+    arraylength;
+    ifle L_slot_next;
+  endtry t_slot_exception_first;
+  endtry t_slot_any_first;
+  try t_slot_exception_second;
+  try t_slot_any_second;
+    aload_3;
+    bipush 12;
+    baload;
+    iload_0;
+    if_icmpne L_slot_next;
+    iload_2;
+    istore_3;
+  endtry t_slot_exception_second;
+  endtry t_slot_any_second;
+    aload_1;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+    iload_3;
+    ireturn;
+L_slot_next:
+    goto L_slot_inc;
+
+  catch t_slot_exception_first java/lang/Exception;
+  catch t_slot_exception_second java/lang/Exception;
+    pop;
+L_slot_inc:
+  try t_slot_any_inc;
+    iinc 2, 1;
+    goto L_slot_loop;
+L_slot_not_found:
+  endtry t_slot_any_inc;
+    aload_1;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+    goto L_slot_minus_one;
+
+  catch t_slot_any_init #0;
+  catch t_slot_any_inc #0;
+  catch t_slot_any_first #0;
+  catch t_slot_any_second #0;
+    astore_0;
+    aload_1;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+    aload_0;
+    athrow;
+L_slot_minus_one:
+  iconst_m1;
+  ireturn;
+}
+
+} // end Class TestSparseProtectedRangeFinally

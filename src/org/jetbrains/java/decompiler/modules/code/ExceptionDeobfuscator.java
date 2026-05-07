@@ -23,26 +23,30 @@ public final class ExceptionDeobfuscator {
     private final BasicBlock handler;
     private final String uniqueStr;
     private final Set<BasicBlock> protectedRange;
-    private final ExceptionRangeCFG rangeCFG;
+    private final List<ExceptionRangeCFG> rangeCFGs;
 
     private Range(BasicBlock handler, String uniqueStr, Set<BasicBlock> protectedRange, ExceptionRangeCFG rangeCFG) {
       this.handler = handler;
       this.uniqueStr = uniqueStr;
       this.protectedRange = protectedRange;
-      this.rangeCFG = rangeCFG;
+      this.rangeCFGs = new ArrayList<>();
+      this.rangeCFGs.add(rangeCFG);
+    }
+
+    private ExceptionRangeCFG getRepresentativeRange() {
+      return rangeCFGs.get(0);
     }
   }
 
-  public static void restorePopRanges(ControlFlowGraph graph) {
-
+  private static List<Range> aggregateRanges(ControlFlowGraph graph) {
     List<Range> lstRanges = new ArrayList<>();
 
-    // aggregate ranges
     for (ExceptionRangeCFG range : graph.getExceptions()) {
       boolean found = false;
       for (Range arr : lstRanges) {
         if (arr.handler == range.getHandler() && InterpreterUtil.equalObjects(range.getUniqueExceptionsString(), arr.uniqueStr)) {
           arr.protectedRange.addAll(range.getProtectedRange());
+          arr.rangeCFGs.add(range);
           found = true;
           break;
         }
@@ -53,6 +57,13 @@ public final class ExceptionDeobfuscator {
         lstRanges.add(new Range(range.getHandler(), range.getUniqueExceptionsString(), new HashSet<>(range.getProtectedRange()), range));
       }
     }
+
+    return lstRanges;
+  }
+
+  public static void restorePopRanges(ControlFlowGraph graph) {
+
+    List<Range> lstRanges = aggregateRanges(graph);
 
     // process aggregated ranges
     for (Range range : lstRanges) {
@@ -130,9 +141,9 @@ public final class ExceptionDeobfuscator {
                     }
 
                     newblock.addSuccessorException(range_super.handler);
-                    range_super.rangeCFG.getProtectedRange().add(newblock);
+                    range_super.getRepresentativeRange().getProtectedRange().add(newblock);
 
-                    handler = range.rangeCFG.getHandler();
+                    handler = range.getRepresentativeRange().getHandler();
                     seq = handler.getSeq();
                   }
                 }
@@ -283,24 +294,19 @@ public final class ExceptionDeobfuscator {
   }
 
   public static boolean hasObfuscatedExceptions(ControlFlowGraph graph) {
-    Map<BasicBlock, Set<BasicBlock>> mapRanges = new HashMap<>();
-    for (ExceptionRangeCFG range : graph.getExceptions()) {
-      mapRanges.computeIfAbsent(range.getHandler(), k -> new HashSet<>()).addAll(range.getProtectedRange());
-    }
-
-    for (Entry<BasicBlock, Set<BasicBlock>> ent : mapRanges.entrySet()) {
+    for (Range range : aggregateRanges(graph)) {
       Set<BasicBlock> setEntries = new HashSet<>();
 
-      for (BasicBlock block : ent.getValue()) {
+      for (BasicBlock block : range.protectedRange) {
         Set<BasicBlock> setTemp = new HashSet<>(block.getPreds());
-        setTemp.removeAll(ent.getValue());
+        setTemp.removeAll(range.protectedRange);
 
         if (!setTemp.isEmpty()) {
           setEntries.add(block);
         }
       }
 
-      if (ent.getValue().contains(graph.getFirst())) {
+      if (range.protectedRange.contains(graph.getFirst())) {
         setEntries.add(graph.getFirst());
       }
 
@@ -312,6 +318,144 @@ public final class ExceptionDeobfuscator {
     }
 
     return false;
+  }
+
+  // Some compilers leave local/control-only connector blocks outside otherwise
+  // logical try/finally regions. These blocks cannot throw into the handler, but
+  // keeping them outside can give the structurer a loop whose latch is outside
+  // the protected range and whose header is inside it.
+  public static boolean normalizeSparseExceptionRanges(ControlFlowGraph graph) {
+    boolean changed = false;
+
+    for (Range range : aggregateRanges(graph)) {
+      LinkedHashSet<BasicBlock> protectedBlocks = new LinkedHashSet<>(range.protectedRange);
+
+      closeOverSafeConnectors(graph, protectedBlocks);
+
+      if (protectedBlocks.size() == range.protectedRange.size()) {
+        continue;
+      }
+
+      if (range.rangeCFGs.size() == 1) {
+        replaceRangeContents(graph, range.getRepresentativeRange(), protectedBlocks);
+        changed = true;
+      }
+      else if (getRegularRangeEntries(graph, protectedBlocks).size() <= 1) {
+        replaceRangeContents(graph, range.getRepresentativeRange(), protectedBlocks);
+        graph.getExceptions().removeAll(range.rangeCFGs.subList(1, range.rangeCFGs.size()));
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  private static void closeOverSafeConnectors(ControlFlowGraph graph, Set<BasicBlock> protectedBlocks) {
+    boolean changed;
+    do {
+      changed = false;
+
+      for (BasicBlock block : graph.getBlocks()) {
+        if (protectedBlocks.contains(block) || !isSafeExceptionRangeConnector(block)) {
+          continue;
+        }
+
+        List<BasicBlock> preds = block.getPreds();
+        List<BasicBlock> succs = block.getSuccs();
+        if (!preds.isEmpty() && !succs.isEmpty() &&
+            protectedBlocks.containsAll(preds) &&
+            protectedBlocks.containsAll(succs)) {
+          protectedBlocks.add(block);
+          changed = true;
+        }
+      }
+    }
+    while (changed);
+  }
+
+  private static Set<BasicBlock> getRegularRangeEntries(ControlFlowGraph graph, Set<BasicBlock> protectedBlocks) {
+    Set<BasicBlock> entries = new HashSet<>();
+
+    for (BasicBlock block : protectedBlocks) {
+      Set<BasicBlock> preds = new HashSet<>(block.getPreds());
+      preds.removeAll(protectedBlocks);
+
+      if (!preds.isEmpty()) {
+        entries.add(block);
+      }
+    }
+
+    if (protectedBlocks.contains(graph.getFirst())) {
+      entries.add(graph.getFirst());
+    }
+
+    return entries;
+  }
+
+  private static void replaceRangeContents(ControlFlowGraph graph, ExceptionRangeCFG range, Set<BasicBlock> protectedBlocks) {
+    List<BasicBlock> ordered = new ArrayList<>();
+    for (BasicBlock block : graph.getBlocks()) {
+      if (protectedBlocks.contains(block)) {
+        ordered.add(block);
+        block.addSuccessorException(range.getHandler());
+      }
+    }
+
+    range.getProtectedRange().clear();
+    range.getProtectedRange().addAll(ordered);
+  }
+
+  private static boolean isSafeExceptionRangeConnector(BasicBlock block) {
+    for (Instruction instr : block.getSeq()) {
+      if (!isLocalControlInstruction(instr)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private static boolean isLocalControlInstruction(Instruction instr) {
+    int opcode = instr.opcode;
+
+    if (opcode == CodeConstants.opc_nop ||
+        opcode == CodeConstants.opc_iinc ||
+        opcode == CodeConstants.opc_goto ||
+        opcode == CodeConstants.opc_goto_w) {
+      return true;
+    }
+
+    if (opcode >= CodeConstants.opc_aconst_null && opcode <= CodeConstants.opc_sipush) {
+      return true;
+    }
+
+    if (opcode >= CodeConstants.opc_iload && opcode <= CodeConstants.opc_aload_3) {
+      return true;
+    }
+
+    if (opcode >= CodeConstants.opc_istore && opcode <= CodeConstants.opc_astore_3) {
+      return true;
+    }
+
+    if (opcode >= CodeConstants.opc_pop && opcode <= CodeConstants.opc_swap) {
+      return true;
+    }
+
+    if (opcode >= CodeConstants.opc_iadd && opcode <= CodeConstants.opc_lxor &&
+        opcode != CodeConstants.opc_idiv &&
+        opcode != CodeConstants.opc_ldiv &&
+        opcode != CodeConstants.opc_irem &&
+        opcode != CodeConstants.opc_lrem) {
+      return true;
+    }
+
+    if (opcode >= CodeConstants.opc_i2l && opcode <= CodeConstants.opc_dcmpg) {
+      return true;
+    }
+
+    return opcode >= CodeConstants.opc_ifeq && opcode <= CodeConstants.opc_goto ||
+           opcode == CodeConstants.opc_ifnull ||
+           opcode == CodeConstants.opc_ifnonnull;
   }
 
   public static boolean handleMultipleEntryExceptionRanges(ControlFlowGraph graph) {

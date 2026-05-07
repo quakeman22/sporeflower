@@ -59,6 +59,16 @@ public class MethodProcessor implements Runnable {
     this.parentContext = parentContext;
   }
 
+  private static final class PreparedGraph {
+    private final ControlFlowGraph graph;
+    private final boolean normalizedSparseExceptionRanges;
+
+    private PreparedGraph(ControlFlowGraph graph, boolean normalizedSparseExceptionRanges) {
+      this.graph = graph;
+      this.normalizedSparseExceptionRanges = normalizedSparseExceptionRanges;
+    }
+  }
+
   @Override
   public void run() {
     error = null;
@@ -96,59 +106,8 @@ public class MethodProcessor implements Runnable {
 
     mt.expandData(cl);
     FullInstructionSequence seq = mt.getInstructionSequence();
-    ControlFlowGraph graph = new ControlFlowGraph(seq);
-    debugCurrentCFG.set(graph);
-    DotExporter.toDotFile(graph, mt, "cfgConstructed", true);
-
-    DeadCodeHelper.removeDeadBlocks(graph);
-
-    if (mt.getBytecodeVersion().hasJsr() || DecompilerContext.getOption(IFernflowerPreferences.FORCE_JSR_INLINE)) {
-      graph.inlineJsr(cl, mt);
-    }
-
-    // TODO: move to the start, before jsr inlining
-    DeadCodeHelper.connectDummyExitBlock(graph);
-
-    DeadCodeHelper.removeGotos(graph);
-
-    ExceptionDeobfuscator.removeCircularRanges(graph);
-
-    ExceptionDeobfuscator.restorePopRanges(graph);
-
-    if (DecompilerContext.getOption(IFernflowerPreferences.REMOVE_EMPTY_RANGES)) {
-      ExceptionDeobfuscator.removeEmptyRanges(graph);
-    }
-
-    if (DecompilerContext.getOption(IFernflowerPreferences.ENSURE_SYNCHRONIZED_MONITOR)) {
-      // special case: search for 'synchronized' ranges w/o monitorexit instruction
-      DeadCodeHelper.extendSynchronizedRangeToMonitorexit(graph);
-    }
-
-    if (DecompilerContext.getOption(IFernflowerPreferences.INCORPORATE_RETURNS)) {
-      // special case: single return instruction outside of a protected range
-      DeadCodeHelper.incorporateValueReturns(graph);
-    }
-
-    //		ExceptionDeobfuscator.restorePopRanges(graph);
-    ExceptionDeobfuscator.insertEmptyExceptionHandlerBlocks(graph);
-
-    DeadCodeHelper.mergeBasicBlocks(graph);
-
-    DecompilerContext.getCounterContainer().setCounter(CounterContainer.VAR_COUNTER, mt.getLocalVariables());
-
-    if (ExceptionDeobfuscator.hasObfuscatedExceptions(graph)) {
-      DotExporter.toDotFile(graph, mt, "cfgExceptionsPre", true);
-
-      if (!ExceptionDeobfuscator.handleMultipleEntryExceptionRanges(graph)) {
-        DecompilerContext.getLogger().writeMessage("Found multiple entry exception ranges which could not be splitted", IFernflowerLogger.Severity.WARN);
-        graph.addComment("$VF: Could not handle exception ranges with multiple entries");
-        graph.addErrorComment = true;
-      }
-
-      DotExporter.toDotFile(graph, mt, "cfgMultipleExceptionEntry", true);
-      ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks(graph, mt.getBytecodeVersion());
-      DotExporter.toDotFile(graph, mt, "cfgMultipleExceptionDummyHandlers", true);
-    }
+    PreparedGraph prepared = prepareInitialGraph(cl, mt, seq, false, "");
+    ControlFlowGraph graph = prepared.graph;
 
     if (spec != null) {
       DecompileRecord decompileRecord = new DecompileRecord(mt);
@@ -162,7 +121,29 @@ public class MethodProcessor implements Runnable {
     }
 
     DotExporter.toDotFile(graph, mt, "cfgParsed", true);
-    RootStatement root = DomHelper.parseGraph(graph, mt, 0);
+    RootStatement root;
+    try {
+      root = DomHelper.parseGraph(graph, mt, 0);
+    }
+    catch (RuntimeException ex) {
+      // Preserve the faithful CFG by default. If it cannot be structured, retry
+      // with non-throwing connector blocks folded into sparse exception ranges.
+      PreparedGraph retry = prepareInitialGraph(cl, mt, seq, true, "cfgSparseExceptionRetry_");
+      if (!retry.normalizedSparseExceptionRanges) {
+        throw ex;
+      }
+
+      graph = retry.graph;
+      DotExporter.toDotFile(graph, mt, "cfgSparseExceptionRetry_Parsed", true);
+
+      try {
+        root = DomHelper.parseGraph(graph, mt, 0);
+      }
+      catch (RuntimeException retryEx) {
+        ex.addSuppressed(retryEx);
+        throw ex;
+      }
+    }
 
     DecompileRecord decompileRecord = new DecompileRecord(mt);
     debugCurrentDecompileRecord.set(decompileRecord);
@@ -437,6 +418,70 @@ public class MethodProcessor implements Runnable {
     mt.releaseResources();
 
     return root;
+  }
+
+  private static PreparedGraph prepareInitialGraph(StructClass cl,
+                                                   StructMethod mt,
+                                                   FullInstructionSequence seq,
+                                                   boolean normalizeSparseExceptionRanges,
+                                                   String dotPrefix) {
+    ControlFlowGraph graph = new ControlFlowGraph(seq);
+    debugCurrentCFG.set(graph);
+    DotExporter.toDotFile(graph, mt, dotPrefix + "cfgConstructed", true);
+
+    DeadCodeHelper.removeDeadBlocks(graph);
+
+    if (mt.getBytecodeVersion().hasJsr() || DecompilerContext.getOption(IFernflowerPreferences.FORCE_JSR_INLINE)) {
+      graph.inlineJsr(cl, mt);
+    }
+
+    // TODO: move to the start, before jsr inlining
+    DeadCodeHelper.connectDummyExitBlock(graph);
+
+    DeadCodeHelper.removeGotos(graph);
+
+    ExceptionDeobfuscator.removeCircularRanges(graph);
+
+    ExceptionDeobfuscator.restorePopRanges(graph);
+
+    if (DecompilerContext.getOption(IFernflowerPreferences.REMOVE_EMPTY_RANGES)) {
+      ExceptionDeobfuscator.removeEmptyRanges(graph);
+    }
+
+    if (DecompilerContext.getOption(IFernflowerPreferences.ENSURE_SYNCHRONIZED_MONITOR)) {
+      // special case: search for 'synchronized' ranges w/o monitorexit instruction
+      DeadCodeHelper.extendSynchronizedRangeToMonitorexit(graph);
+    }
+
+    if (DecompilerContext.getOption(IFernflowerPreferences.INCORPORATE_RETURNS)) {
+      // special case: single return instruction outside of a protected range
+      DeadCodeHelper.incorporateValueReturns(graph);
+    }
+
+    //		ExceptionDeobfuscator.restorePopRanges(graph);
+    ExceptionDeobfuscator.insertEmptyExceptionHandlerBlocks(graph);
+
+    boolean normalizedSparseRanges = normalizeSparseExceptionRanges && ExceptionDeobfuscator.normalizeSparseExceptionRanges(graph);
+
+    DeadCodeHelper.mergeBasicBlocks(graph);
+
+    DecompilerContext.getCounterContainer().setCounter(CounterContainer.VAR_COUNTER, mt.getLocalVariables());
+
+    if (ExceptionDeobfuscator.hasObfuscatedExceptions(graph)) {
+      DotExporter.toDotFile(graph, mt, dotPrefix + "cfgExceptionsPre", true);
+
+      if (!ExceptionDeobfuscator.handleMultipleEntryExceptionRanges(graph)) {
+        DecompilerContext.getLogger().writeMessage("Found multiple entry exception ranges which could not be splitted", IFernflowerLogger.Severity.WARN);
+        graph.addComment("$VF: Could not handle exception ranges with multiple entries");
+        graph.addErrorComment = true;
+      }
+
+      DotExporter.toDotFile(graph, mt, dotPrefix + "cfgMultipleExceptionEntry", true);
+      ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks(graph, mt.getBytecodeVersion());
+      DotExporter.toDotFile(graph, mt, dotPrefix + "cfgMultipleExceptionDummyHandlers", true);
+    }
+
+    return new PreparedGraph(graph, normalizedSparseRanges);
   }
 
   public RootStatement getResult() throws Throwable {
