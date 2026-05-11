@@ -26,6 +26,7 @@ public class OverloadIntLongAmbiguityRegressionTest extends DecompileRegressionT
 
     String content = decompileClassFile(classFile, "pkg/TestOverloadIntLongAmbiguity.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertTrue(content.contains("a((InputStream)var0, (long)(var1 - 2));"), content);
 
     recompile();
   }

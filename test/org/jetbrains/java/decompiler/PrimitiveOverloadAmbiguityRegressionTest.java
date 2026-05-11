@@ -26,6 +26,7 @@ public class PrimitiveOverloadAmbiguityRegressionTest extends DecompileRegressio
 
     String content = decompileClassFile(classFile, "pkg/TestPrimitiveOverloadAmbiguity.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertTrue(content.contains("e((byte)0, (int)var0, value());"), content);
 
     recompile();
   }

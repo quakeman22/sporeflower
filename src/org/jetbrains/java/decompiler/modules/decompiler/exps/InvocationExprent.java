@@ -1621,15 +1621,18 @@ public class InvocationExprent extends Exprent {
       MethodDescriptor md = mt.methodDescriptor();
 
       boolean exact = true;
+      boolean applicable = true;
       for (int i = 0; i < md.params.length; i++) {
-        Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
-        VarType type = exp.getExprType();
+        VarType type = getOverloadArgumentType(i);
 
         exact &= md.params[i].equals(type) || type.type == CodeType.NULL;
+        applicable &= md.params[i].higherCrossFamilyThan(type, true);
+      }
 
-        if (md.params[i].higherCrossFamilyThan(type, true)) {
-          possible.add(mt);
-        }
+      // The bytecode target must stay in play even if the local classpath
+      // cannot prove assignability for its current rendered arguments.
+      if (applicable || mt == currentMethod) {
+        possible.add(mt);
       }
 
       if (exact) {
@@ -1645,7 +1648,8 @@ public class InvocationExprent extends Exprent {
     if (exacts.isEmpty()) {
       ambiguous.or(getInexactObjectArgumentAmbiguousParameters(possible, currentMethod));
       ambiguous.or(nullLiteralAmbiguous);
-      return ambiguous;
+      // Still fall through to the descriptor comparison below. Inexact numeric
+      // calls can need a cast even when no overload is an exact source match.
     } else if (exacts.size() == 1) {
       StructMethod exact = exacts.iterator().next();
 
@@ -1661,8 +1665,7 @@ public class InvocationExprent extends Exprent {
     MethodDescriptor md = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
     for (StructMethod p : possible) {
       for (int i = 0; i < md.params.length; i++) {
-        Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
-        VarType type = exp.getExprType();
+        VarType type = getOverloadArgumentType(i);
 
         MethodDescriptor pmd = p.methodDescriptor();
         // Only consider non-equivalent types
@@ -1682,6 +1685,24 @@ public class InvocationExprent extends Exprent {
 
     ambiguous.or(nullLiteralAmbiguous);
     return ambiguous;
+  }
+
+  private VarType getOverloadArgumentType(int parameterIndex) {
+    return getOverloadArgumentType(lstParameters.get(parameterIndex));
+  }
+
+  private static VarType getOverloadArgumentType(Exprent exp) {
+    if (exp instanceof AssignmentExprent assignmentExprent) {
+      return getOverloadArgumentType(assignmentExprent.getLeft());
+    }
+
+    if (exp instanceof FunctionExprent functionExprent) {
+      if (!functionExprent.doesCast() && (functionExprent.getFuncType() == FunctionType.CAST || functionExprent.getSimpleCastType() != null)) {
+        return getOverloadArgumentType(functionExprent.getLstOperands().get(0));
+      }
+    }
+
+    return exp.getExprType();
   }
 
   private BitSet getInexactObjectArgumentAmbiguousParameters(Set<StructMethod> possible, StructMethod currentMethod) {
