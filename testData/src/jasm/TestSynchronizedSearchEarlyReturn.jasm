@@ -1,0 +1,86 @@
+package pkg;
+
+super public class TestSynchronizedSearchEarlyReturn
+  version 47:0
+{
+
+private final Field lock:"Ljava/lang/Object;";
+private Field values:"[Ljava/lang/Object;";
+private Field target:"Ljava/lang/Object;";
+
+public Method "<init>":"([Ljava/lang/Object;Ljava/lang/Object;)V"
+  stack 3 locals 3
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  putfield Field lock:"Ljava/lang/Object;";
+  aload_0;
+  aload_1;
+  putfield Field values:"[Ljava/lang/Object;";
+  aload_0;
+  aload_2;
+  putfield Field target:"Ljava/lang/Object;";
+  return;
+}
+
+public Method find:"()I"
+  stack 2 locals 4
+{
+  aload_0;
+  getfield Field lock:"Ljava/lang/Object;";
+  dup;
+  astore_1;
+  monitorenter;
+  try t0;
+    aload_0;
+    getfield Field values:"[Ljava/lang/Object;";
+    arraylength;
+    ifle LExit;
+    aload_0;
+    getfield Field target:"Ljava/lang/Object;";
+    astore_2;
+    aload_0;
+    getfield Field values:"[Ljava/lang/Object;";
+    arraylength;
+    iconst_1;
+    isub;
+    istore_3;
+  LLoop:
+    iload_3;
+    iflt LExit;
+    aload_0;
+    getfield Field values:"[Ljava/lang/Object;";
+    iload_3;
+    aaload;
+    aload_2;
+    if_acmpne LNext;
+    iload_3;
+    aload_1;
+    monitorexit;
+  endtry t0;
+    ireturn;
+  LNext:
+    iinc 3, -1;
+    goto LLoop;
+  LExit:
+    aload_1;
+    monitorexit;
+    goto LReturnDefault;
+  catch t0 null;
+    stack_frame_type stack1;
+    stack_map class java/lang/Throwable;
+    astore_2;
+    aload_1;
+    monitorexit;
+    aload_2;
+    athrow;
+LReturnDefault:
+  iconst_0;
+  ireturn;
+}
+
+} // end Class TestSynchronizedSearchEarlyReturn

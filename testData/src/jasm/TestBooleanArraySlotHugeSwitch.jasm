@@ -1,0 +1,102 @@
+package pkg;
+
+super public class TestBooleanArraySlotHugeSwitch
+  version 45:3
+{
+
+public static Field flag:"Z";
+public static Field chars:"[C";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method sink:"()V"
+  stack 0 locals 0
+{
+  return;
+}
+
+public static Method test:"(I[S)V"
+  stack 4 locals 5
+{
+  iconst_3;
+  istore_2;
+  iload_2;
+  newarray boolean;
+  astore 4;
+  iinc 2, -1;
+LFill:
+  iload_2;
+  iflt LSwitch;
+  aload 4;
+  iload_2;
+  aload_1;
+  iload_2;
+  saload;
+  iconst_m1;
+  if_icmpne LFalse;
+  iconst_1;
+  goto LStore;
+LFalse:
+  iconst_0;
+LStore:
+  i2b;
+  bastore;
+  iinc 2, -1;
+  goto LFill;
+LSwitch:
+  iload_0;
+  lookupswitch{ //6
+    10: LReuseInt;
+    54: LReuseChars;
+    60: LReuseNull;
+    66: LUse0;
+    68: LUse1Negated;
+    74: LAssignBoolean;
+    default: LEnd };
+LReuseInt:
+  aload_1;
+  iconst_0;
+  saload;
+  istore 4;
+  goto LEnd;
+LReuseChars:
+  iconst_1;
+  newarray char;
+  astore 4;
+  aload 4;
+  putstatic Field chars:"[C";
+  goto LEnd;
+LReuseNull:
+  aconst_null;
+  astore 4;
+  goto LEnd;
+LUse0:
+  aload 4;
+  iconst_0;
+  baload;
+  ifeq LEnd;
+  invokestatic Method sink:"()V";
+  goto LEnd;
+LUse1Negated:
+  aload 4;
+  iconst_1;
+  baload;
+  ifne LEnd;
+  invokestatic Method sink:"()V";
+  goto LEnd;
+LAssignBoolean:
+  aload 4;
+  iconst_0;
+  baload;
+  putstatic Field flag:"Z";
+LEnd:
+  return;
+}
+
+} // end Class TestBooleanArraySlotHugeSwitch

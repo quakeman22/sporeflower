@@ -1,0 +1,17 @@
+package pkg;
+
+super public final class TestMissingSubclassConstructorChild extends TestMissingSubclassConstructorBase
+  version 47:0
+{
+
+private Field value:"Ljava/lang/Object;";
+
+public Method value:"()Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"Ljava/lang/Object;";
+  areturn;
+}
+
+} // end Class TestMissingSubclassConstructorChild

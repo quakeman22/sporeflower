@@ -1,0 +1,67 @@
+package pkg;
+
+super public class TestMonitorObjectSlotReusedForThrowable
+  version 49:0
+{
+
+public static Field lock:"Ljava/lang/Object;";
+public Field stop:"Z";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method touch:"()V"
+  stack 0 locals 0
+{
+  return;
+}
+
+public Method run:"()V"
+  stack 2 locals 3
+{
+LLoop:
+  aload_0;
+  getfield Field stop:"Z";
+  ifne LDone;
+  getstatic Field lock:"Ljava/lang/Object;";
+  astore_1;
+  aload_1;
+  astore_2;
+  aload_2;
+  monitorenter;
+  try t0;
+    invokestatic Method touch:"()V";
+    aload_2;
+    monitorexit;
+  endtry t0;
+    goto LAfterSync;
+  catch t0 null;
+    stack_frame_type stack1;
+    stack_map class java/lang/Throwable;
+    astore_1;
+    aload_2;
+    monitorexit;
+    aload_1;
+    athrow;
+LAfterSync:
+  goto LLoop;
+LDone:
+  return;
+}
+
+static Method "<clinit>":"()V"
+  stack 2 locals 0
+{
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  putstatic Field lock:"Ljava/lang/Object;";
+  return;
+}
+
+} // end Class TestMonitorObjectSlotReusedForThrowable

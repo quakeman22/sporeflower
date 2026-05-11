@@ -1,0 +1,41 @@
+package pkg;
+
+super public class TestOverloadIntLongAmbiguity
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method a:"(Ljava/io/InputStream;J)V"
+  throws java/io/IOException
+  stack 0 locals 3
+{
+  return;
+}
+
+public static Method a:"(Ljava/lang/Object;I)V"
+  stack 0 locals 2
+{
+  return;
+}
+
+public static Method test:"(Ljava/io/DataInputStream;I)V"
+  throws java/io/IOException
+  stack 3 locals 2
+{
+  aload_0;
+  iload_1;
+  iconst_2;
+  isub;
+  i2l;
+  invokestatic Method a:"(Ljava/io/InputStream;J)V";
+  return;
+}
+
+} // end Class TestOverloadIntLongAmbiguity

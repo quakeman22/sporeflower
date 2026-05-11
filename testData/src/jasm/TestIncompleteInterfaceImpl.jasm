@@ -1,0 +1,26 @@
+package pkg;
+
+super final class TestIncompleteInterfaceImpl implements TestIncompleteInterfaceChild
+  version 47:0
+{
+
+private final Field value:"Ljava/lang/Object;";
+
+Method "<init>":"(Ljava/lang/Object;)V"
+  stack 2 locals 2
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  aload_1;
+  putfield Field value:"Ljava/lang/Object;";
+  return;
+}
+
+public Method done:"(Ljava/lang/Object;III)V"
+  stack 0 locals 5
+{
+  return;
+}
+
+} // end Class TestIncompleteInterfaceImpl

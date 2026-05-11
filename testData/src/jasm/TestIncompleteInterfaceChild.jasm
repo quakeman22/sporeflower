@@ -1,0 +1,9 @@
+package pkg;
+
+public interface abstract TestIncompleteInterfaceChild implements TestIncompleteInterfaceParent
+  version 47:0
+{
+
+public abstract Method done:"(Ljava/lang/Object;III)V";
+
+} // end Class TestIncompleteInterfaceChild

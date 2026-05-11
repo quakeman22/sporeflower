@@ -1,0 +1,21 @@
+package pkg;
+
+super public abstract class TestIncompleteAbstractBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public abstract Method draw:"()V";
+
+public abstract Method image:"()Ljava/lang/Object;";
+
+public abstract Method count:"()I";
+
+} // end Class TestIncompleteAbstractBase

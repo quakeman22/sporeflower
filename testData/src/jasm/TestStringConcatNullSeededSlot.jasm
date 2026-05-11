@@ -1,0 +1,43 @@
+package pkg;
+
+super public class TestStringConcatNullSeededSlot
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method test:"()Ljava/lang/String;"
+  stack 3 locals 2
+{
+  aconst_null;
+  astore_1;
+  new class java/lang/StringBuffer;
+  dup;
+  invokespecial Method java/lang/StringBuffer."<init>":"()V";
+  bipush 13;
+  invokevirtual Method java/lang/StringBuffer.append:"(C)Ljava/lang/StringBuffer;";
+  ldc String "|";
+  invokevirtual Method java/lang/StringBuffer.append:"(Ljava/lang/String;)Ljava/lang/StringBuffer;";
+  invokevirtual Method java/lang/StringBuffer.toString:"()Ljava/lang/String;";
+  astore_1;
+  new class java/lang/StringBuffer;
+  dup;
+  invokespecial Method java/lang/StringBuffer."<init>":"()V";
+  aload_1;
+  invokevirtual Method java/lang/StringBuffer.append:"(Ljava/lang/String;)Ljava/lang/StringBuffer;";
+  bipush 13;
+  invokevirtual Method java/lang/StringBuffer.append:"(C)Ljava/lang/StringBuffer;";
+  invokevirtual Method java/lang/StringBuffer.toString:"()Ljava/lang/String;";
+  astore_1;
+  aload_1;
+  checkcast class java/lang/String;
+  areturn;
+}
+
+} // end Class TestStringConcatNullSeededSlot

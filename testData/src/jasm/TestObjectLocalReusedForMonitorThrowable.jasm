@@ -1,0 +1,76 @@
+package pkg;
+
+super public class TestObjectLocalReusedForMonitorThrowable implements java/lang/Runnable
+  version 45:3
+{
+
+private static Field lock:"Ljava/lang/Object;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method touch:"(Ljava/lang/Object;)V"
+  stack 0 locals 1
+{
+  return;
+}
+
+public Method run:"()V"
+  stack 2 locals 3
+{
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  astore_1;
+  getstatic Field lock:"Ljava/lang/Object;";
+  astore_2;
+  aload_2;
+  monitorenter;
+  try t0;
+    aload_1;
+    invokestatic Method touch:"(Ljava/lang/Object;)V";
+    aload_2;
+    monitorexit;
+    goto LEnd;
+  endtry t0;
+  catch t0 java/lang/Throwable;
+    astore_1;
+  try t1;
+    aload_2;
+    monitorexit;
+    aload_1;
+    athrow;
+  endtry t1;
+  catch t1 java/lang/Throwable;
+    astore_1;
+    goto LHandlerLoop;
+  LHandlerLoop:
+  try t2;
+    aload_2;
+    monitorexit;
+    aload_1;
+    athrow;
+  endtry t2;
+  catch t2 java/lang/Throwable;
+    astore_1;
+    goto LHandlerLoop;
+LEnd:
+  return;
+}
+
+static Method "<clinit>":"()V"
+  stack 2 locals 0
+{
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  putstatic Field lock:"Ljava/lang/Object;";
+  return;
+}
+
+} // end Class TestObjectLocalReusedForMonitorThrowable

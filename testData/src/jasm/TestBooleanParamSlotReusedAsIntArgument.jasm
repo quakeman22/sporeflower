@@ -1,0 +1,58 @@
+package pkg;
+
+super public class TestBooleanParamSlotReusedAsIntArgument
+  version 49:0
+{
+
+public Field values:"[S";
+
+public Method "<init>":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  bipush 10;
+  newarray short;
+  putfield Field values:"[S";
+  return;
+}
+
+public static Method sink:"(Lpkg/TestBooleanParamSlotReusedAsIntArgument;I)V"
+  stack 0 locals 2
+{
+  return;
+}
+
+public Method test:"(Z)V"
+  stack 4 locals 2
+{
+  iload_1;
+  aload_0;
+  getfield Field values:"[S";
+  bipush 7;
+  saload;
+  if_icmpeq LEnd;
+  aload_0;
+  getfield Field values:"[S";
+  bipush 7;
+  iload_1;
+  i2s;
+  sastore;
+  iload_1;
+  ifeq LFalse;
+  iconst_1;
+  istore_1;
+  goto LJoin;
+LFalse:
+  iconst_0;
+  istore_1;
+LJoin:
+  aload_0;
+  iload_1;
+  invokestatic Method sink:"(Lpkg/TestBooleanParamSlotReusedAsIntArgument;I)V";
+LEnd:
+  return;
+}
+
+} // end Class TestBooleanParamSlotReusedAsIntArgument

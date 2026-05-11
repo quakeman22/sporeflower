@@ -1,0 +1,32 @@
+package pkg;
+
+super public class TestConstructorSelfAliasBeforeSuper
+  version 47:0
+{
+
+private Field value:"Ljava/lang/String;";
+
+public Method "<init>":"(Ljava/lang/Object;)V"
+  stack 2 locals 2
+{
+  aload_0;
+  aload_1;
+  astore_1;
+  dup;
+  astore_1;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_1;
+  ldc String "ready";
+  putfield Field value:"Ljava/lang/String;";
+  return;
+}
+
+public Method value:"()Ljava/lang/String;"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"Ljava/lang/String;";
+  areturn;
+}
+
+} // end Class TestConstructorSelfAliasBeforeSuper

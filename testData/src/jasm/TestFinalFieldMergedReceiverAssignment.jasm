@@ -1,0 +1,41 @@
+package pkg;
+
+super public class TestFinalFieldMergedReceiverAssignment
+  version 47:0
+{
+
+private final Field value:"I";
+
+public Method "<init>":"(Z)V"
+  stack 2 locals 4
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  iload_1;
+  ifeq LFalse;
+  aload_0;
+  astore_2;
+  iconst_1;
+  istore_3;
+  goto LAssign;
+LFalse:
+  aload_0;
+  astore_2;
+  iconst_2;
+  istore_3;
+LAssign:
+  aload_2;
+  iload_3;
+  putfield Field value:"I";
+  return;
+}
+
+public Method value:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"I";
+  ireturn;
+}
+
+} // end Class TestFinalFieldMergedReceiverAssignment

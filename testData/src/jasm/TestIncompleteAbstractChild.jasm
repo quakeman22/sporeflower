@@ -1,0 +1,22 @@
+package pkg;
+
+super final public class TestIncompleteAbstractChild extends pkg/TestIncompleteAbstractBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestIncompleteAbstractBase."<init>":"()V";
+  return;
+}
+
+public final Method count:"()I"
+  stack 1 locals 1
+{
+  iconst_0;
+  ireturn;
+}
+
+} // end Class TestIncompleteAbstractChild

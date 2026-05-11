@@ -1,0 +1,56 @@
+package pkg;
+
+super public class TestOuterInterruptedCatchAfterSwallowedSleep extends ext/LegacyCanvas implements java/lang/Runnable
+  version 45:3
+{
+
+public Field stopped:"Z";
+private Field loaded:"Ljava/lang/Object;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method ext/LegacyCanvas."<init>":"()V";
+  return;
+}
+
+public Method run:"()V"
+  stack 3 locals 1
+{
+  try t_outer;
+  LLoop:
+    aload_0;
+    getfield Field stopped:"Z";
+    ifne LExitLoop;
+    aload_0;
+    invokevirtual Method ext/LegacyCanvas.repaint:"()V";
+  try t_inner;
+    aload_0;
+    getfield Field loaded:"Ljava/lang/Object;";
+    ifnonnull LAlreadyLoaded;
+    aload_0;
+    ldc String "loaded";
+    putfield Field loaded:"Ljava/lang/Object;";
+    ldc2_w 5l;
+    invokestatic Method java/lang/Thread.sleep:"(J)V";
+    goto LAfterInner;
+  LAlreadyLoaded:
+    ldc2_w 5l;
+    invokestatic Method java/lang/Thread.sleep:"(J)V";
+  LAfterInner:
+    goto LLoop;
+  endtry t_inner;
+  catch t_inner java/lang/Throwable;
+    pop;
+    goto LLoop;
+  LExitLoop:
+    goto LAfterOuter;
+  endtry t_outer;
+  catch t_outer java/lang/InterruptedException;
+    pop;
+  LAfterOuter:
+    return;
+}
+
+} // end Class TestOuterInterruptedCatchAfterSwallowedSleep

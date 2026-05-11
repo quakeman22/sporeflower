@@ -1,0 +1,47 @@
+package pkg;
+
+super public class TestPrimitiveOverloadAmbiguity
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method e:"(BILjava/lang/Object;)V"
+  stack 0 locals 3
+{
+  return;
+}
+
+public static Method e:"(SSLjava/lang/Object;)V"
+  stack 0 locals 3
+{
+  return;
+}
+
+public static Method value:"()Ljava/lang/Object;"
+  stack 1 locals 0
+{
+  aconst_null;
+  areturn;
+}
+
+public static Method test:"()V"
+  stack 3 locals 1
+{
+  iconst_0;
+  i2b;
+  istore_0;
+  iconst_0;
+  iload_0;
+  invokestatic Method value:"()Ljava/lang/Object;";
+  invokestatic Method e:"(BILjava/lang/Object;)V";
+  return;
+}
+
+} // end Class TestPrimitiveOverloadAmbiguity
