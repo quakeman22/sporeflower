@@ -1,10 +1,12 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
+import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
@@ -156,8 +158,8 @@ public class ConstExprent extends Exprent {
     addBytecodeOffsets(bytecodeOffsets);
     ValidationHelper.assertTrue(constType != VarType.VARTYPE_VOID, "Must not make const type with type void");
 
-    if (constType.equals(VarType.VARTYPE_CLASS) && value != null) {
-      String stringVal = value.toString();
+    if (isClassLiteralType(constType) && value != null) {
+      String stringVal = remapClassLiteralName(value.toString());
       List<VarType> args = Collections.singletonList(new VarType(stringVal, !stringVal.startsWith("[")));
       this.constType = new GenericType(constType.type, constType.arrayDim, constType.value, null, args, GenericType.WILDCARD_NO);
     }
@@ -198,6 +200,10 @@ public class ConstExprent extends Exprent {
 
   @Override
   public VarType getExprType() {
+    if (isClassLiteralType(constType) && DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5)) {
+      return VarType.VARTYPE_CLASS;
+    }
+
     return constType;
   }
 
@@ -345,8 +351,8 @@ public class ConstExprent extends Exprent {
       case OBJECT:
         if (constType.equals(VarType.VARTYPE_STRING)) {
           return buf.append(convertStringToJava(value.toString(), ascii)).enclose("\"", "\"");
-        } else if (constType.equals(VarType.VARTYPE_CLASS)) {
-          String stringVal = value.toString();
+        } else if (isClassLiteralType(constType)) {
+          String stringVal = remapClassLiteralName(value.toString());
           VarType type = new VarType(stringVal, !stringVal.startsWith("["));
           return buf.appendCastTypeName(type).append(".class");
         } else if (constType.equals(VarType.VARTYPE_METHODTYPE)) {
@@ -362,6 +368,37 @@ public class ConstExprent extends Exprent {
     // prevent gc without discarding
     buf.convertToStringAndAllowDataDiscard();
     throw new RuntimeException("invalid constant type: " + constType + " with value " + value);
+  }
+
+  private static boolean isClassLiteralType(VarType type) {
+    return type.type == CodeType.OBJECT && "java/lang/Class".equals(type.value);
+  }
+
+  private static String remapClassLiteralName(String className) {
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) {
+      return className;
+    }
+
+    VarType type = new VarType(className, !className.startsWith("["));
+    if (type.type != CodeType.OBJECT || type.value == null) {
+      return className;
+    }
+
+    String mappedName = interceptor.getName(type.value);
+    if (mappedName == null) {
+      return className;
+    }
+
+    if (type.arrayDim == 0) {
+      return mappedName;
+    }
+
+    StringBuilder buffer = new StringBuilder();
+    for (int i = 0; i < type.arrayDim; i++) {
+      buffer.append('[');
+    }
+    return buffer.append('L').append(mappedName).append(';').toString();
   }
 
   @Override

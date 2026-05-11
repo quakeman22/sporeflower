@@ -1537,7 +1537,7 @@ public class SimplifyExprentsHelper {
       AssignmentExprent assignment = (AssignmentExprent) class14Builder.getVariableValue("$assignfield$");
       FieldExprent fieldExpr = (FieldExprent) class14Builder.getVariableValue("$field$");
 
-      assignment.replaceExprent(assignment.getRight(), new ConstExprent(VarType.VARTYPE_CLASS, class_name, null));
+      assignment.replaceExprent(assignment.getRight(), new ConstExprent(VarType.VARTYPE_CLASS, ClassReference14Processor.toInternalClassName(class_name), null));
 
       List<Exprent> data = new ArrayList<>(stat.getFirst().getExprents());
 

@@ -109,7 +109,7 @@ public final class ClassReference14Processor {
 
           String cl = isClass14Invocation(exprent, ent.getKey(), ent.getValue());
           if (cl != null) {
-            initializers.set(i, new ConstExprent(VarType.VARTYPE_CLASS, cl.replace('.', '/'), exprent.bytecode));
+            initializers.set(i, new ConstExprent(VarType.VARTYPE_CLASS, toInternalClassName(cl), exprent.bytecode));
             setFound.add(ent.getKey());
           }
         }
@@ -171,7 +171,7 @@ public final class ClassReference14Processor {
       for (Exprent expr : exprent.getAllExprents()) {
         String cl = isClass14Invocation(expr, wrapper, meth);
         if (cl != null) {
-          exprent.replaceExprent(expr, new ConstExprent(VarType.VARTYPE_CLASS, cl.replace('.', '/'), expr.bytecode));
+          exprent.replaceExprent(expr, new ConstExprent(VarType.VARTYPE_CLASS, toInternalClassName(cl), expr.bytecode));
           found = true;
           res = true;
           break;
@@ -236,5 +236,9 @@ public final class ClassReference14Processor {
     }
 
     return null;
+  }
+
+  static String toInternalClassName(String className) {
+    return className.replace('.', '/');
   }
 }
