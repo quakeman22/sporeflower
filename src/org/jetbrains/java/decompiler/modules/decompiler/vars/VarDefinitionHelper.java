@@ -670,7 +670,7 @@ public class VarDefinitionHelper {
     VPPEntry remap = mergeVars(stat, parent, new HashMap<>(), denylist);
     while (remap != null) {
       //System.out.println("Remapping: " + remap.getKey() + " -> " + remap.getValue());
-      if (!remapVar(stat, remap.getKey(), remap.getValue())) {
+      if (!remapVar(stat, remap.getKey(), remap.getValue(), remap.getMergedTypeOverride())) {
         denylist.put(remap.getKey(), remap.getValue());
       } else {
         mergeLegacySlotTypeEvidence(remap.getKey(), remap.getValue());
@@ -791,7 +791,7 @@ public class VarDefinitionHelper {
         }
         else if (obj instanceof Exprent) {
           VPPEntry ret = processExprent((Exprent)obj, this_vars, scoped, denylist);
-          if (ret != null && isVarReadFirst(ret.getValue(), stat, i + 1) && canMergeTypes(ret.getKey(), ret.getValue())) {
+          if (ret != null && isVarReadFirst(ret.getValue(), stat, i + 1) && canMergeTypes(ret.getKey(), ret.getValue(), ret.getMergedTypeOverride())) {
             return ret;
           }
         }
@@ -804,7 +804,7 @@ public class VarDefinitionHelper {
         VPPEntry ret = processExprent(exp, this_vars, scoped, denylist);
         if (ret != null && !isVarReadFirst(ret.getValue(), stat, i + 1)) {
           // Only merge when we can derive a valid shared type for the remap pair.
-          if (canMergeTypes(ret.getKey(), ret.getValue())) {
+          if (canMergeTypes(ret.getKey(), ret.getValue(), ret.getMergedTypeOverride())) {
             // TODO: this only checks for totally disjoint types, there are instances where merging is incorrect with primitives
 
             boolean ok = true;
@@ -942,7 +942,7 @@ public class VarDefinitionHelper {
       if (new_ != null && canMergeWithExistingVar(index, old, new_)) {
         VarVersionPair deny = denylist.get(old);
         if (deny == null || !deny.equals(new_)) {
-          return new VPPEntry(var, new_);
+          return new VPPEntry(var, new_, getNullAssignmentMergeType(exp, new_));
         }
       }
 
@@ -953,6 +953,23 @@ public class VarDefinitionHelper {
     }
 
     return null;
+  }
+
+  private VarType getNullAssignmentMergeType(Exprent exp, VarVersionPair target) {
+    if (!(exp instanceof AssignmentExprent assignment) ||
+        !(assignment.getRight() instanceof ConstExprent constExpr) ||
+        !constExpr.isNull()) {
+      return null;
+    }
+
+    // A null-only local is assignable to the existing reference type. Do not let
+    // its normalized Object type widen a concrete array/object slot merge.
+    VarType targetType = varproc.getVarType(target);
+    if (targetType == null || targetType.type == CodeType.UNKNOWN || targetType.type == CodeType.NULL) {
+      return null;
+    }
+
+    return targetType.typeFamily == TypeFamily.OBJECT ? targetType : null;
   }
 
   private boolean canMergeWithExistingVar(int originalIndex, VarVersionPair current, VarVersionPair existing) {
@@ -1073,11 +1090,15 @@ public class VarDefinitionHelper {
   }
 
   private boolean canMergeTypes(VarVersionPair from, VarVersionPair to) {
+    return canMergeTypes(from, to, null);
+  }
+
+  private boolean canMergeTypes(VarVersionPair from, VarVersionPair to, VarType mergedTypeOverride) {
     if (j2meStrictSlotMerge && hasIncompatibleLegacySlotTypes(from, to)) {
       return false;
     }
 
-    VarType mergedType = getMergedType(from, to);
+    VarType mergedType = mergedTypeOverride != null ? mergedTypeOverride : getMergedType(from, to);
     if (mergedType == null) {
       return false;
     }
@@ -1093,7 +1114,18 @@ public class VarDefinitionHelper {
       return false;
     }
 
-    return isLatticeCompatible(mergedType, fromType) && isLatticeCompatible(mergedType, toType);
+    return isLatticeCompatible(mergedType, fromType)
+      && isLatticeCompatible(mergedType, toType)
+      && (mergedTypeOverride == null || satisfiesUpperBounds(mergedType, from, to));
+  }
+
+  private boolean satisfiesUpperBounds(VarType mergedType, VarVersionPair from, VarVersionPair to) {
+    Map<VarVersionPair, VarType> upperBounds = varproc.getVarVersions().getTypeProcessor().getUpperBounds();
+    VarType fromMax = upperBounds.get(from);
+    VarType toMax = upperBounds.get(to);
+
+    return (fromMax == null || fromMax.higherEqualInLatticeThan(mergedType)) &&
+           (toMax == null || toMax.higherEqualInLatticeThan(mergedType));
   }
 
   private static boolean hasConflictingConcretePrimitiveTypes(VarType first, VarType second) {
@@ -1141,14 +1173,18 @@ public class VarDefinitionHelper {
   }
 
   private boolean remapVar(Statement stat, VarVersionPair from, VarVersionPair to) {
+    return remapVar(stat, from, to, null);
+  }
+
+  private boolean remapVar(Statement stat, VarVersionPair from, VarVersionPair to, VarType mergedTypeOverride) {
     if (from.equals(to))
       throw new IllegalStateException("Trying to remap var version " + from + " in statement " + stat + " to itself!");
-    VarType merged = getMergedType(from, to);
+    VarType merged = mergedTypeOverride != null ? mergedTypeOverride : getMergedType(from, to);
     if (merged == null) {
       return false;
     }
 
-    boolean success = remapVar(stat, from, to, merged);
+    boolean success = applyRemapVar(stat, from, to, merged);
     if (success) {
       updateMergedVarDefinitions(stat, from, to, merged);
       varproc.setVarType(to, merged);
@@ -1156,11 +1192,11 @@ public class VarDefinitionHelper {
     return success;
   }
 
-  private boolean remapVar(Statement stat, VarVersionPair from, VarVersionPair to, VarType merged) {
+  private boolean applyRemapVar(Statement stat, VarVersionPair from, VarVersionPair to, VarType merged) {
     boolean success = false;
     if (stat.getExprents() == null) {
       for (Statement st : stat.getStats()) {
-        success |= remapVar(st, from, to, merged);
+        success |= applyRemapVar(st, from, to, merged);
       }
 
       for (Exprent exp : stat.getStatExprents()) {
@@ -1590,8 +1626,19 @@ public class VarDefinitionHelper {
     }
   }
   private static class VPPEntry extends SimpleEntry<VarVersionPair, VarVersionPair> {
+    private final VarType mergedTypeOverride;
+
     private VPPEntry(VarExprent key, VarVersionPair value) {
-        super(new VarVersionPair(key), value);
+      this(key, value, null);
+    }
+
+    private VPPEntry(VarExprent key, VarVersionPair value, VarType mergedTypeOverride) {
+      super(new VarVersionPair(key), value);
+      this.mergedTypeOverride = mergedTypeOverride;
+    }
+
+    private VarType getMergedTypeOverride() {
+      return mergedTypeOverride;
     }
   }
 

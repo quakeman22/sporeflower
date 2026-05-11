@@ -1,0 +1,49 @@
+package pkg;
+
+super public class TestNullSlotMergeUpperBound
+  version 45:3
+{
+
+public static Method sink:"()V"
+  stack 0 locals 0
+{
+  return;
+}
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(I)V"
+  stack 2 locals 2
+{
+  iconst_1;
+  newarray boolean;
+  astore_1;
+
+  iload_0;
+  ifeq LNullStringUse;
+
+  aload_1;
+  iconst_0;
+  baload;
+  ifeq LEnd;
+  invokestatic Method sink:"()V";
+  goto LEnd;
+
+LNullStringUse:
+  aconst_null;
+  astore_1;
+  aload_1;
+  invokevirtual Method java/lang/String.length:"()I";
+  pop;
+
+LEnd:
+  return;
+}
+
+} // end Class TestNullSlotMergeUpperBound
