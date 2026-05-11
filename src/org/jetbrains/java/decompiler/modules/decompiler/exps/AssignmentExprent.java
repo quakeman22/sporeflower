@@ -211,7 +211,8 @@ public class AssignmentExprent extends Exprent {
 
     if (fieldInClassInit) {
       FieldExprent field = (FieldExprent) left;
-      buffer.appendField(field.getName(), false, field.getClassname(), field.getName(), field.getDescriptor());
+      buffer.appendField(FieldExprent.getSourceFieldName(field.getClassname(), field.getName(), field.getDescriptor()),
+                         false, field.getClassname(), field.getName(), field.getDescriptor());
     } else {
       buffer.append(left.toJava(indent));
     }

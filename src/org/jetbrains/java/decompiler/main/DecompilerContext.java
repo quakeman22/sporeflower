@@ -136,6 +136,12 @@ public class DecompilerContext {
     return currentClass != null && currentClass.getVersion().major < featureMajorVersion;
   }
 
+  public static boolean shouldUseLegacySourceCompatibility(StructClass cl, int featureMajorVersion) {
+    return getOption(IFernflowerPreferences.LEGACY_SOURCE_COMPATIBILITY) &&
+           cl != null &&
+           cl.getVersion().major < featureMajorVersion;
+  }
+
   public static int getIntOption(String key) {
     try {
       return Integer.parseInt((String) getProperty(key));

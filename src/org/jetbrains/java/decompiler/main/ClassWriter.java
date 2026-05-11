@@ -957,7 +957,8 @@ public class ClassWriter implements StatementWriter {
       buffer.append(' ');
     }
 
-    buffer.appendField(name, true, cl.qualifiedName, name, fd.getDescriptor());
+    String sourceName = FieldExprent.getSourceFieldName(cl, fd, name);
+    buffer.appendField(sourceName, true, cl.qualifiedName, name, fd.getDescriptor());
 
     Exprent initializer;
     if (fd.hasModifier(CodeConstants.ACC_STATIC)) {

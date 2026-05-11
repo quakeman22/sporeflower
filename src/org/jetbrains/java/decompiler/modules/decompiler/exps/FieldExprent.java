@@ -3,6 +3,7 @@
  */
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -233,9 +234,56 @@ public class FieldExprent extends Exprent {
 
     buf.addBytecodeMapping(bytecode);
 
-    buf.appendField(name, false, classname, name, descriptor);
+    buf.appendField(getSourceFieldName(classname, name, descriptor), false, classname, name, descriptor);
 
     return buf;
+  }
+
+  public static String getSourceFieldName(String classname, String name, FieldDescriptor descriptor) {
+    StructClass cl = DecompilerContext.getStructContext().getClass(classname);
+    StructField fd = cl == null ? null : cl.getField(name, descriptor.descriptorString);
+    return getSourceFieldName(cl, fd, name);
+  }
+
+  public static String getSourceFieldName(StructClass cl, StructField fd, String displayName) {
+    if (cl == null || fd == null || !isReservedLegacySyntheticFieldName(displayName) ||
+        !DecompilerContext.shouldUseLegacySourceCompatibility(cl, BytecodeVersion.MAJOR_5)) {
+      return displayName;
+    }
+
+    String suffix = displayName.substring("this$".length());
+    String candidate = "outerThis" + suffix;
+    Set<String> occupied = new HashSet<>();
+    for (StructField other : cl.getFields()) {
+      if (other == fd) {
+        continue;
+      }
+
+      occupied.add(other.getName());
+      if (isReservedLegacySyntheticFieldName(other.getName())) {
+        occupied.add("outerThis" + other.getName().substring("this$".length()));
+      }
+    }
+
+    String result = candidate;
+    for (int counter = 1; occupied.contains(result); counter++) {
+      result = candidate + "_" + counter;
+    }
+    return result;
+  }
+
+  private static boolean isReservedLegacySyntheticFieldName(String name) {
+    if (!name.startsWith("this$") || name.length() == "this$".length()) {
+      return false;
+    }
+
+    for (int i = "this$".length(); i < name.length(); i++) {
+      char ch = name.charAt(i);
+      if (ch < '0' || ch > '9') {
+        return false;
+      }
+    }
+    return true;
   }
 
   private boolean useQualifiedStatic() {
