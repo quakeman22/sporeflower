@@ -1143,14 +1143,28 @@ public class VarDefinitionHelper {
   private boolean remapVar(Statement stat, VarVersionPair from, VarVersionPair to) {
     if (from.equals(to))
       throw new IllegalStateException("Trying to remap var version " + from + " in statement " + stat + " to itself!");
+    VarType merged = getMergedType(from, to);
+    if (merged == null) {
+      return false;
+    }
+
+    boolean success = remapVar(stat, from, to, merged);
+    if (success) {
+      updateMergedVarDefinitions(stat, from, to, merged);
+      varproc.setVarType(to, merged);
+    }
+    return success;
+  }
+
+  private boolean remapVar(Statement stat, VarVersionPair from, VarVersionPair to, VarType merged) {
     boolean success = false;
     if (stat.getExprents() == null) {
       for (Statement st : stat.getStats()) {
-        success |= remapVar(st, from, to);
+        success |= remapVar(st, from, to, merged);
       }
 
       for (Exprent exp : stat.getStatExprents()) {
-        if (remapVar(exp, from, to)) {
+        if (remapVar(exp, from, to, merged)) {
           success = true;
         }
       }
@@ -1159,7 +1173,7 @@ public class VarDefinitionHelper {
       boolean remapped = false;
       for (int x = 0; x < stat.getExprents().size(); x++) {
         Exprent exp = stat.getExprents().get(x);
-        if (remapVar(exp, from, to)) {
+        if (remapVar(exp, from, to, merged)) {
           remapped = true;
           if (exp instanceof VarExprent) {
             if (!((VarExprent)exp).isDefinition()) {
@@ -1172,32 +1186,56 @@ public class VarDefinitionHelper {
       success |= remapped;
     }
 
-    if (success) {
-      Iterator<Exprent> itr = stat.getVarDefinitions().iterator();
-      while (itr.hasNext()) {
-        Exprent exp = itr.next();
-        if (exp instanceof VarExprent) {
-          VarExprent var = (VarExprent)exp;
-          if (from.equals(var.getVarVersionPair())) {
-            itr.remove();
-          }
-          else if (to.var == var.getIndex() && to.version == var.getVersion()) {
-            VarType merged = getMergedType(from, to);
+    return success;
+  }
 
-            if (merged == null) { // Something went wrong.. This SHOULD be non-null
-              continue;
-            }
-
-            var.setVarType(merged);
-          }
+  private void updateMergedVarDefinitions(Statement stat, VarVersionPair from, VarVersionPair to, VarType merged) {
+    Iterator<Exprent> itr = stat.getVarDefinitions().iterator();
+    while (itr.hasNext()) {
+      Exprent exp = itr.next();
+      if (exp instanceof VarExprent) {
+        VarExprent var = (VarExprent)exp;
+        VarVersionPair pair = var.getVarVersionPair();
+        if (from.equals(pair)) {
+          itr.remove();
+        }
+        else if (to.equals(pair)) {
+          var.setVarType(merged);
         }
       }
     }
 
-    return success;
+    for (Exprent exp : stat.getStatExprents()) {
+      updateMergedVarTypes(exp, to, merged);
+    }
+
+    if (stat.getExprents() != null) {
+      for (Exprent exp : stat.getExprents()) {
+        updateMergedVarTypes(exp, to, merged);
+      }
+    }
+
+    for (Statement st : stat.getStats()) {
+      updateMergedVarDefinitions(st, from, to, merged);
+    }
   }
 
-  private boolean remapVar(Exprent exprent, VarVersionPair from, VarVersionPair to) {
+  private static void updateMergedVarTypes(Exprent exprent, VarVersionPair to, VarType merged) {
+    if (exprent == null) {
+      return;
+    }
+
+    List<Exprent> lst = exprent.getAllExprents(true);
+    lst.add(exprent);
+
+    for (Exprent expr : lst) {
+      if (expr instanceof VarExprent var && to.equals(var.getVarVersionPair())) {
+        var.setVarType(merged);
+      }
+    }
+  }
+
+  private boolean remapVar(Exprent exprent, VarVersionPair from, VarVersionPair to, VarType merged) {
     if (exprent == null) { // Sometimes there are null exprents?
       return false;
     }
@@ -1219,10 +1257,6 @@ public class VarDefinitionHelper {
           if (right.getConstType() == VarType.VARTYPE_NULL) {
             continue;
           }
-          VarType merged = getMergedType(from, to);
-          if (merged == null) { // Types incompatible, do not merge
-            continue;
-          }
 
           // Merged constant assignment, attempt to set the constant type to ensure that it's correct
 
@@ -1240,10 +1274,6 @@ public class VarDefinitionHelper {
         if (!old.equals(from)) {
           continue;
         }
-        VarType merged = getMergedType(from, to);
-        if (merged == null) { // Types incompatible, do not merge
-          continue;
-        }
 
         var.setIndex(to.var);
         var.setVersion(to.version);
@@ -1251,7 +1281,6 @@ public class VarDefinitionHelper {
         if (var.isDefinition()) {
           var.setDefinition(false);
         }
-        varproc.setVarType(to, merged);
         remapped = true;
       }
     }
