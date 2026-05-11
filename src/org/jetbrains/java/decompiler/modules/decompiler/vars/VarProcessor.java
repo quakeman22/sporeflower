@@ -2,6 +2,7 @@
 package org.jetbrains.java.decompiler.modules.decompiler.vars;
 
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.collectors.VarNamesCollector;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
@@ -152,6 +153,27 @@ public class VarProcessor {
 
   public List<VarVersionPair> getParams() {
     return params;
+  }
+
+  public @Nullable VarType getDeclaredParameterType(int index) {
+    Integer originalIndex = getVarOriginalIndex(index);
+    return getParameterTypeByOriginalIndex(originalIndex == null ? index : originalIndex);
+  }
+
+  public @Nullable VarType getParameterTypeByOriginalIndex(int originalIndex) {
+    if (!method.hasModifier(CodeConstants.ACC_STATIC) && originalIndex == 0) {
+      return null;
+    }
+
+    int slot = method.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
+    for (VarType parameter : methodDescriptor.params) {
+      if (slot == originalIndex) {
+        return parameter;
+      }
+      slot += parameter.stackSize;
+    }
+
+    return null;
   }
 
   public void setVarType(VarVersionPair pair, VarType type) {

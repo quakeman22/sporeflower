@@ -1019,11 +1019,32 @@ public class VarDefinitionHelper {
 
   private boolean canMergeWithExistingVar(int originalIndex, VarVersionPair current, VarVersionPair existing) {
     if (!isOverwrittenReceiverSlot(originalIndex, current, existing)) {
-      return true;
+      return !isIncompatibleOverwrittenParameterSlot(originalIndex, current, existing);
     }
 
     // Slot 0 can be reassigned in obfuscated bytecode. Keep those locals distinct from the Java receiver.
     return current.equals(existing);
+  }
+
+  private boolean isIncompatibleOverwrittenParameterSlot(int originalIndex, VarVersionPair current, VarVersionPair existing) {
+    if (current.equals(existing) || !varproc.getParams().contains(existing)) {
+      return false;
+    }
+
+    VarType parameterType = varproc.getParameterTypeByOriginalIndex(originalIndex);
+    VarType currentType = varproc.getVarType(current);
+    return parameterType != null &&
+      currentType != null &&
+      currentType.type != CodeType.UNKNOWN &&
+      !isAssignableToDeclaredParameter(parameterType, currentType);
+  }
+
+  private static boolean isAssignableToDeclaredParameter(VarType parameterType, VarType currentType) {
+    if (parameterType.type == CodeType.BOOLEAN || currentType.type == CodeType.BOOLEAN) {
+      return parameterType.type == currentType.type;
+    }
+
+    return parameterType.higherCrossFamilyThan(currentType, true);
   }
 
   private Map<VarVersionPair, Set<VarType>> collectLegacySlotTypeEvidence() {

@@ -1,12 +1,9 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
-import org.jetbrains.java.decompiler.code.CodeConstants;
-import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.CheckTypesResult;
-import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.TextBuffer;
@@ -174,27 +171,15 @@ public class ArrayExprent extends Exprent {
       return false;
     }
 
-    MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
-    if (method == null) {
+    VarProcessor processor = varExpr.getProcessor();
+    if (processor == null) {
       return false;
     }
 
-    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.methodStruct.getDescriptor());
-    Integer originalIndex = varExpr.getProcessor() == null ? null : varExpr.getProcessor().getVarOriginalIndex(varExpr.getIndex());
-    int resolvedIndex = originalIndex == null ? varExpr.getIndex() : originalIndex;
-    int slot = method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
-    for (VarType paramType : descriptor.params) {
+    VarType parameterType = processor.getDeclaredParameterType(varExpr.getIndex());
+    if (parameterType != null && processor.getParams().contains(varExpr.getVarVersionPair())) {
       // If this expression points at a non-array method parameter slot, force a cast so we don't emit `param[idx]`.
-      if (slot == resolvedIndex) {
-        // Do not force the cast for locals that merely reuse a parameter slot.
-        // Those variables have already been split out and should keep their inferred array type.
-        if (!method.varproc.getParams().contains(varExpr.getVarVersionPair())) {
-          return false;
-        }
-
-        return paramType.arrayDim == 0;
-      }
-      slot += paramType.stackSize;
+      return parameterType.arrayDim == 0;
     }
 
     return false;

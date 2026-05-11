@@ -28,10 +28,10 @@ public Method "testMethod":"(Ljava/lang/Iterable;)V"
         invokeinterface InterfaceMethod java/util/Iterator."next":"()Ljava/lang/Object;", 1;
         astore_1;
         aload_1;
-        instanceof Ljava/lang/Iterable;
+        instanceof java/lang/Iterable;
         ifeq LForEach;
         aload_1;
-        checkcast Ljava/lang/Iterable;
+        checkcast java/lang/Iterable;
         astore_1;
         goto LMain;
         LStop:

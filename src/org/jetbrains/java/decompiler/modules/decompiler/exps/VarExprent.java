@@ -407,26 +407,7 @@ public class VarExprent extends Exprent {
       return null;
     }
 
-    int originalIndex = index;
-    Integer mappedIndex = processor.getVarOriginalIndex(index);
-    if (mappedIndex != null) {
-      originalIndex = mappedIndex;
-    }
-
-    if (!method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) && originalIndex == 0) {
-      return null;
-    }
-
-    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.methodStruct.getDescriptor());
-    int slot = method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
-    for (VarType parameter : descriptor.params) {
-      if (slot == originalIndex) {
-        return parameter;
-      }
-      slot += parameter.stackSize;
-    }
-
-    return null;
+    return processor.getDeclaredParameterType(index);
   }
 
   @Nullable
