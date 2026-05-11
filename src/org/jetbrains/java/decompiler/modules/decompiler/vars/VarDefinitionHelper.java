@@ -53,6 +53,7 @@ public class VarDefinitionHelper {
   private final boolean j2meStrictSlotMerge;
   private final StructStackMapAttribute legacyStackMap;
   private final Map<VarVersionPair, Set<VarType>> legacySlotTypeEvidence;
+  private final Set<VarVersionPair> nullAssignmentDefinitions = new HashSet<>();
 
   public VarDefinitionHelper(RootStatement root, StructMethod mt, VarProcessor varproc) {
     this(root, mt, varproc, true);
@@ -136,6 +137,7 @@ public class VarDefinitionHelper {
     // Strict J2ME mode must still run the final merge pass: canMergeTypes guards
     // each merge with legacy StackMap evidence, while skipping the pass leaves
     // valid same-slot SSA splits declared without an initializer.
+    collectNullAssignmentDefinitions();
     mergeVars(root);
 
     // catch variables are implicitly defined
@@ -256,6 +258,7 @@ public class VarDefinitionHelper {
       }
     }
 
+    collectNullAssignmentDefinitions();
     mergeVars(root);
     propagateLVTs(root);
     setNonFinal(root, new HashSet<>());
@@ -710,9 +713,12 @@ public class VarDefinitionHelper {
             VarVersionPair current = new VarVersionPair(var);
             VarVersionPair existing = this_vars.get(index);
 
-            if (existing != null && canMergeWithExistingVar(index, current, existing) && canMergeTypes(current, existing)) {
-              stat.getVarDefinitions().remove(x);
-              return new VPPEntry(var, existing);
+            if (existing != null && canMergeWithExistingVar(index, current, existing)) {
+              VarType mergedTypeOverride = getExistingNullAssignmentMergeType(current, existing);
+              if (canMergeTypes(current, existing, mergedTypeOverride)) {
+                stat.getVarDefinitions().remove(x);
+                return new VPPEntry(var, existing, mergedTypeOverride);
+              }
             }
 
             this_vars.put(index, current);
@@ -942,7 +948,7 @@ public class VarDefinitionHelper {
       if (new_ != null && canMergeWithExistingVar(index, old, new_)) {
         VarVersionPair deny = denylist.get(old);
         if (deny == null || !deny.equals(new_)) {
-          return new VPPEntry(var, new_, getNullAssignmentMergeType(exp, new_));
+          return new VPPEntry(var, new_, getNullAssignmentMergeType(exp, old, new_));
         }
       }
 
@@ -955,21 +961,60 @@ public class VarDefinitionHelper {
     return null;
   }
 
-  private VarType getNullAssignmentMergeType(Exprent exp, VarVersionPair target) {
-    if (!(exp instanceof AssignmentExprent assignment) ||
-        !(assignment.getRight() instanceof ConstExprent constExpr) ||
-        !constExpr.isNull()) {
+  private VarType getNullAssignmentMergeType(Exprent exp, VarVersionPair source, VarVersionPair target) {
+    if (isNullAssignmentDefinition(exp)) {
+      // A null-only local is assignable to the existing reference type. Do not let
+      // its normalized Object type widen a concrete array/object slot merge.
+      VarType targetType = varproc.getVarType(target);
+      return targetType != null && targetType.typeFamily == TypeFamily.OBJECT ? targetType : null;
+    }
+
+    return getExistingNullAssignmentMergeType(source, target);
+  }
+
+  private VarType getExistingNullAssignmentMergeType(VarVersionPair source, VarVersionPair target) {
+    if (!nullAssignmentDefinitions.contains(target)) {
       return null;
     }
 
-    // A null-only local is assignable to the existing reference type. Do not let
-    // its normalized Object type widen a concrete array/object slot merge.
-    VarType targetType = varproc.getVarType(target);
-    if (targetType == null || targetType.type == CodeType.UNKNOWN || targetType.type == CodeType.NULL) {
-      return null;
-    }
+    VarType sourceType = varproc.getVarType(source);
+    return isSpecificReferenceType(sourceType) ? sourceType : null;
+  }
 
-    return targetType.typeFamily == TypeFamily.OBJECT ? targetType : null;
+  private void collectNullAssignmentDefinitions() {
+    nullAssignmentDefinitions.clear();
+    StatementIterator.iterate(root, exprent -> {
+      VarVersionPair pair = getNullAssignmentDefinition(exprent);
+      if (pair != null) {
+        nullAssignmentDefinitions.add(pair);
+      }
+      return 0;
+    });
+  }
+
+  private static boolean isNullAssignmentDefinition(Exprent exprent) {
+    return getNullAssignmentDefinition(exprent) != null;
+  }
+
+  private static VarVersionPair getNullAssignmentDefinition(Exprent exprent) {
+    return exprent instanceof AssignmentExprent assignment &&
+      assignment.getLeft() instanceof VarExprent var &&
+      var.isDefinition() &&
+      assignment.getRight() instanceof ConstExprent constExpr &&
+      constExpr.isNull()
+      ? new VarVersionPair(var)
+      : null;
+  }
+
+  private void mergeNullAssignmentDefinitions(VarVersionPair from, VarVersionPair to, VarType merged) {
+    boolean mergedIsStillOnlyNull = VarType.VARTYPE_OBJECT.equals(merged) &&
+      nullAssignmentDefinitions.contains(from) &&
+      nullAssignmentDefinitions.contains(to);
+    nullAssignmentDefinitions.remove(from);
+    nullAssignmentDefinitions.remove(to);
+    if (mergedIsStillOnlyNull) {
+      nullAssignmentDefinitions.add(to);
+    }
   }
 
   private boolean canMergeWithExistingVar(int originalIndex, VarVersionPair current, VarVersionPair existing) {
@@ -1188,6 +1233,7 @@ public class VarDefinitionHelper {
     if (success) {
       updateMergedVarDefinitions(stat, from, to, merged);
       varproc.setVarType(to, merged);
+      mergeNullAssignmentDefinitions(from, to, merged);
     }
     return success;
   }
@@ -1336,6 +1382,14 @@ public class VarDefinitionHelper {
     Map<VarVersionPair, VarType> maxTypes = varproc.getVarVersions().getTypeProcessor().getUpperBounds();
 
     return getMergedType(minTypes.get(from), minTypes.get(to), maxTypes.get(from), maxTypes.get(to));
+  }
+
+  private static boolean isSpecificReferenceType(VarType type) {
+    return type != null &&
+      type.typeFamily == TypeFamily.OBJECT &&
+      type.type != CodeType.NULL &&
+      type.type != CodeType.UNKNOWN &&
+      !type.equals(VarType.VARTYPE_OBJECT);
   }
 
   private VarType getMergedType(VarType fromMin, VarType toMin, VarType fromMax, VarType toMax) {
