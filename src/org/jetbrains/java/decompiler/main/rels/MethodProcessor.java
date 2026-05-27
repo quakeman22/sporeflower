@@ -217,9 +217,9 @@ public class MethodProcessor implements Runnable {
 
     PassContext pctx = new PassContext(root, graph, mt, cl, varProc, decompileRecord);
 
-    // Inline ppi/mmi that we may have missed
-    if (PPandMMHelper.inlinePPIandMMIIf(root)) {
-      decompileRecord.add("InlinePPIandMMI", root);
+    // Inline ppi/mmi that we may have missed in loop-header guards
+    if (PPandMMHelper.inlinePPIandMMIIfForLoopHeaders(root)) {
+      decompileRecord.add("InlinePPIandMMI_LoopHeaders", root);
     }
 
     // Plugin passes to run before the main decompilation loop

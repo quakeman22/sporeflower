@@ -11,16 +11,15 @@ import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNode;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
-import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.DoStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.IfStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
+import org.jetbrains.java.decompiler.util.Pair;
 
-import java.util.BitSet;
-import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -214,9 +213,11 @@ public class PPandMMHelper {
   //   ...
   // }
   //
-  // Semantically the same, but cleaner and allows for loop inlining
-  public static boolean inlinePPIandMMIIf(RootStatement stat) {
-    boolean res = inlinePPIandMMIIfRec(stat);
+  // Semantically the same, but cleaner and allows for loop inlining. Keep this
+  // limited to loop-header guards; folding ordinary body ifs tends to move
+  // source-like increments into conditions for no structural benefit.
+  public static boolean inlinePPIandMMIIfForLoopHeaders(RootStatement stat) {
+    boolean res = inlinePPIandMMIIfForLoopHeadersRec(stat);
 
     if (res) {
       SequenceHelper.condenseSequences(stat);
@@ -225,76 +226,34 @@ public class PPandMMHelper {
     return res;
   }
 
-  private static boolean inlinePPIandMMIIfRec(Statement stat) {
+  private static boolean inlinePPIandMMIIfForLoopHeadersRec(Statement stat) {
     boolean res = false;
     for (Statement st : stat.getStats()) {
-      res |= inlinePPIandMMIIfRec(st);
+      res |= inlinePPIandMMIIfForLoopHeadersRec(st);
     }
 
     if (stat.getExprents() != null && !stat.getExprents().isEmpty()) {
       IfStatement destination = findIfSuccessor(stat);
 
-      if (destination != null) {
-        // Last exprent
-        Exprent expr = stat.getExprents().get(stat.getExprents().size() - 1);
-        if (expr instanceof FunctionExprent) {
-          FunctionExprent func = (FunctionExprent)expr;
+      if (destination != null &&
+          isLoopHeaderCandidate(destination) &&
+          stat.getExprents().get(stat.getExprents().size() - 1) instanceof FunctionExprent func &&
+          (func.getFuncType() == FunctionExprent.FunctionType.PPI || func.getFuncType() == FunctionExprent.FunctionType.MMI) &&
+          func.getLstOperands().get(0) instanceof VarExprent inner) {
+        Exprent ifExpr = destination.getHeadexprent().getCondition();
 
-          if (func.getFuncType() == FunctionExprent.FunctionType.PPI || func.getFuncType() == FunctionExprent.FunctionType.MMI) {
-            Exprent inner = func.getLstOperands().get(0);
+        while (ifExpr instanceof FunctionExprent ifFunc && ifFunc.getFuncType() == FunctionExprent.FunctionType.BOOL_NOT) {
+          ifExpr = ifFunc.getLstOperands().get(0);
+        }
 
-            if (inner instanceof VarExprent) {
-              Exprent ifExpr = destination.getHeadexprent().getCondition();
+        Pair<Exprent, VarExprent> usage = SimplifyExprentsHelper.findFirstSafeUsage(inner, ifExpr, func);
+        if (usage != null) {
+          usage.a.replaceExprent(usage.b, func);
+          func.addBytecodeOffsets(usage.b.bytecode);
+          stat.getExprents().remove(stat.getExprents().size() - 1);
+          res = true;
 
-              if (ifExpr instanceof FunctionExprent) {
-                FunctionExprent ifFunc = (FunctionExprent)ifExpr;
-
-                while (ifFunc.getFuncType() == FunctionExprent.FunctionType.BOOL_NOT) {
-                  Exprent innerFunc = ifFunc.getLstOperands().get(0);
-
-                  if (innerFunc instanceof FunctionExprent) {
-                    ifFunc = (FunctionExprent)innerFunc;
-                  } else {
-                    break;
-                  }
-                }
-
-                InlineTarget target = findInlineTarget(ifFunc, ((VarExprent)inner).getIndex(), false, true, expr);
-                if (!target.valid) {
-                  return false;
-                }
-
-                if (target.var != null) {
-                  Deque<Exprent> stack = new LinkedList<>();
-                  stack.push(ifFunc);
-
-                  while (!stack.isEmpty()) {
-                    Exprent exprent = stack.pop();
-
-                    for (Exprent ex : exprent.getAllExprents()) {
-                      if (ex == target.var) {
-                        // Replace variable with ppi/mmi
-                        exprent.replaceExprent(target.var, expr);
-                        expr.addBytecodeOffsets(target.var.bytecode);
-
-                        // No more itr
-                        stack.clear();
-                        break;
-                      }
-
-                      stack.push(ex);
-                    }
-                  }
-
-                  // Remove old expr
-                  stat.getExprents().remove(expr);
-                  res = true;
-
-                  destination.setHasPPMM(true);
-                }
-              }
-            }
-          }
+          destination.setHasPPMM(true);
         }
       }
     }
@@ -302,114 +261,24 @@ public class PPandMMHelper {
     return res;
   }
 
-  private static InlineTarget findInlineTarget(Exprent exprent, int varIndex, boolean writeContext, boolean rootCondition, Exprent inlineExpr) {
-    if (exprent instanceof VarExprent var && var.getIndex() == varIndex) {
-      return writeContext ? InlineTarget.invalid() : InlineTarget.of(var);
-    }
+  private static boolean isLoopHeaderCandidate(IfStatement destination) {
+    Statement child = destination;
+    Statement parent = child.getParent();
 
-    if (exprent instanceof FunctionExprent func) {
-      FunctionExprent.FunctionType type = func.getFuncType();
-      if (!rootCondition && (type == FunctionExprent.FunctionType.BOOLEAN_AND || type == FunctionExprent.FunctionType.BOOLEAN_OR)) {
-        // Cannot yet handle these as we aren't able to decompose a condition into parts that are always run (not short-circuited) and parts that are.
-        // FIXME: handle this case
-        return InlineTarget.invalid();
+    while (parent != null) {
+      if (parent instanceof DoStatement loop) {
+        return loop.getLooptype() == DoStatement.Type.INFINITE && loop.getFirst() == child;
       }
 
-      return findInlineTargetInChildren(func.getAllExprents(), varIndex, writeContext || type.isPPMM(), inlineExpr);
-    }
-
-    if (exprent instanceof AssignmentExprent assignment) {
-      InlineTarget left = findInlineTarget(assignment.getLeft(), varIndex, true, false, inlineExpr);
-      if (!left.valid) {
-        return left;
+      if (parent.getFirst() != child) {
+        return false;
       }
 
-      InlineTarget right = findInlineTarget(assignment.getRight(), varIndex, writeContext, false, inlineExpr);
-      return left.merge(right);
+      child = parent;
+      parent = child.getParent();
     }
 
-    return findInlineTargetInChildren(exprent.getAllExprents(), varIndex, writeContext, inlineExpr);
-  }
-
-  private static InlineTarget findInlineTargetInChildren(List<Exprent> children, int varIndex, boolean writeContext, Exprent inlineExpr) {
-    InlineTarget result = InlineTarget.none();
-    boolean unsafeBeforeTarget = false;
-
-    for (Exprent child : children) {
-      InlineTarget childTarget = findInlineTarget(child, varIndex, writeContext, false, inlineExpr);
-      if (!childTarget.valid || (unsafeBeforeTarget && childTarget.var != null)) {
-        return InlineTarget.invalid();
-      }
-
-      result = result.merge(childTarget);
-      if (!result.valid) {
-        return result;
-      }
-
-      if (result.var == null && !isEvaluatedBefore(child, inlineExpr)) {
-        unsafeBeforeTarget = true;
-      }
-    }
-
-    return result;
-  }
-
-  private static boolean isEvaluatedBefore(Exprent exprent, Exprent reference) {
-    BitSet exprentRange = new BitSet();
-    exprent.getBytecodeRange(exprentRange);
-
-    BitSet referenceRange = new BitSet();
-    reference.getBytecodeRange(referenceRange);
-
-    int exprentLast = exprentRange.length() - 1;
-    int referenceFirst = referenceRange.nextSetBit(0);
-
-    if (exprentLast < 0 || referenceFirst < 0) {
-      return exprent instanceof ConstExprent || exprent instanceof VarExprent;
-    }
-
-    return exprentLast < referenceFirst;
-  }
-
-  private static final class InlineTarget {
-    private static final InlineTarget NONE = new InlineTarget(null, true);
-    private static final InlineTarget INVALID = new InlineTarget(null, false);
-
-    final VarExprent var;
-    final boolean valid;
-
-    private InlineTarget(VarExprent var, boolean valid) {
-      this.var = var;
-      this.valid = valid;
-    }
-
-    static InlineTarget none() {
-      return NONE;
-    }
-
-    static InlineTarget invalid() {
-      return INVALID;
-    }
-
-    static InlineTarget of(VarExprent var) {
-      return new InlineTarget(var, true);
-    }
-
-    InlineTarget merge(InlineTarget other) {
-      if (!this.valid || !other.valid) {
-        return INVALID;
-      }
-
-      if (this.var == null) {
-        return other;
-      }
-
-      if (other.var == null) {
-        return this;
-      }
-
-      return INVALID;
-    }
+    return false;
   }
 
   private static IfStatement findIfSuccessor(Statement stat) {

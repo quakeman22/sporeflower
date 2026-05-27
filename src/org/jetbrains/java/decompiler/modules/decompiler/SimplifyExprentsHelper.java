@@ -1,6 +1,7 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -787,7 +788,7 @@ public class SimplifyExprentsHelper {
   }
 
 
-  // Inlines PPI into the next expression, to make stack var simplificiation easier
+  // Inlines PPI into the next expression, to make stack var simplification easier
   //
   // ++i;
   // array[i] = 2;
@@ -796,33 +797,18 @@ public class SimplifyExprentsHelper {
   //
   // array[++i] = 2;
   //
-  // While this helps simplify stack vars, it also has can potentially make invalid code! When evaluating ppmm correctness, this is a good place to start.
+  // While this helps simplify stack vars, it also has can potentially make invalid code!
+  // When evaluating ppmm correctness, this is a good place to start.
   // TODO: fernflower preference?
   private static boolean inlinePPIAndMMI(Exprent expr, Exprent next) {
-    if (expr instanceof FunctionExprent) {
-      FunctionExprent func = (FunctionExprent) expr;
+    if (expr instanceof FunctionExprent func &&
+        (func.getFuncType() == FunctionType.PPI || func.getFuncType() == FunctionType.MMI) &&
+        func.getLstOperands().get(0) instanceof VarExprent var) {
 
-      if (func.getFuncType() == FunctionType.PPI || func.getFuncType() == FunctionType.MMI) {
-        if (func.getLstOperands().get(0) instanceof VarExprent) {
-          VarExprent var = (VarExprent) func.getLstOperands().get(0);
-
-          // Can't inline ppmm into next ppmm
-          if (next instanceof FunctionExprent) {
-            if (isPPMM((FunctionExprent) next)) {
-              return false;
-            }
-          }
-
-          // Try to find the next use of the variable
-          Pair<Exprent, VarExprent> usage = findFirstValidUsage(var, next);
-
-          // Found usage
-          if (usage != null) {
-            // Replace exprent
-            usage.a.replaceExprent(usage.b, func);
-            return true;
-          }
-        }
+      Pair<Exprent, VarExprent> usage = findFirstStackUsage(var, next);
+      if (usage != null) {
+        usage.a.replaceExprent(usage.b, func);
+        return true;
       }
     }
 
@@ -831,7 +817,7 @@ public class SimplifyExprentsHelper {
 
   // Try to find the first valid usage of a variable for PPMM inlining.
   // Returns Pair{parent exprent, variable exprent to replace}
-  private static Pair<Exprent, VarExprent> findFirstValidUsage(VarExprent match, Exprent next) {
+  private static @Nullable Pair<Exprent, VarExprent> findFirstStackUsage(VarExprent match, Exprent next) {
     List<Exprent> stack = new ArrayList<>();
     List<Exprent> parent = new ArrayList<>();
     stack.add(next);
@@ -844,32 +830,30 @@ public class SimplifyExprentsHelper {
       List<Exprent> exprents = expr.getAllExprents();
 
       if (parentExpr != null &&
-        expr instanceof VarExprent ve &&
-        ve.getIndex() == match.getIndex() &&
-        ve.getVersion() == match.getVersion()) {
-        return Pair.of(parentExpr, ve);
+          expr instanceof VarExprent ve &&
+          ve.getIndex() == match.getIndex()) {
+        return ve.getVersion() == match.getVersion() ? Pair.of(parentExpr, ve) : null;
       }
 
-      if (expr instanceof FunctionExprent) {
-        FunctionExprent func = (FunctionExprent) expr;
+      if (expr instanceof FunctionExprent func) {
+        FunctionType type = func.getFuncType();
 
-        // Don't inline ppmm into more ppmm
-        if (isPPMM(func)) {
+        if (type.isPPMM()) {
           return null;
         }
 
-        // Don't consider || or &&
-        if (func.getFuncType() == FunctionType.BOOLEAN_OR || func.getFuncType() == FunctionType.BOOLEAN_AND) {
-          return null;
-        }
-
-        // Don't consider ternaries
-        if (func.getFuncType() == FunctionType.TERNARY) {
-          return null;
+        // Later operands of short-circuit/ternary expressions might not run, so
+        // only the first operand can preserve the eager increment.
+        if (type == FunctionType.BOOLEAN_OR || type == FunctionType.BOOLEAN_AND || type == FunctionType.TERNARY) {
+          stack.clear();
+          parent.clear();
+          stack.add(func.getLstOperands().get(0));
+          parent.add(expr);
+          continue;
         }
 
         // Subtraction and division make it hard to deduce which variable is used, especially without SSAU, so cancel if we find
-        if (func.getFuncType() == FunctionType.SUB || func.getFuncType() == FunctionType.DIV) {
+        if (type == FunctionType.SUB || type == FunctionType.DIV) {
           return null;
         }
       }
@@ -880,10 +864,9 @@ public class SimplifyExprentsHelper {
 
         // Avoid making something like `++a = 5`. It shouldn't happen but better be safe than sorry.
         if (expr instanceof AssignmentExprent asExpr &&
-          ex == asExpr.getLeft() &&
-          ex instanceof VarExprent innerEx &&
-          innerEx.getIndex() == match.getIndex()
-        ) {
+            ex == asExpr.getLeft() &&
+            ex instanceof VarExprent innerEx &&
+            innerEx.getIndex() == match.getIndex()) {
           continue;
         }
 
@@ -892,16 +875,131 @@ public class SimplifyExprentsHelper {
       }
     }
 
-    // Couldn't find
     return null;
   }
 
-  private static boolean isPPMM(FunctionExprent func) {
-    return
-      func.getFuncType() == FunctionType.PPI ||
-      func.getFuncType() == FunctionType.MMI ||
-      func.getFuncType() == FunctionType.IPP ||
-      func.getFuncType() == FunctionType.IMM;
+  // Used after stack variables have already been simplified, where moving an
+  // increment past earlier evaluated condition pieces can change observable
+  // order. The stack-var peephole above is intentionally more permissive because
+  // it feeds SSA/SSAU cleanup and array/loop resugaring.
+  static @Nullable Pair<Exprent, VarExprent> findFirstSafeUsage(VarExprent match, Exprent next, Exprent inlineExpr) {
+    InlineTarget target = findInlineTarget(next, match, false, inlineExpr, null);
+    return target.valid && target.parent != null && target.var != null ? Pair.of(target.parent, target.var) : null;
+  }
+
+  private static InlineTarget findInlineTarget(
+    Exprent expr,
+    VarExprent match,
+    boolean writeContext,
+    Exprent inlineExpr,
+    Exprent parent
+  ) {
+    if (expr instanceof VarExprent var && var.getIndex() == match.getIndex()) {
+      if (var.getVersion() != match.getVersion()) {
+        return InlineTarget.invalid();
+      }
+
+      return writeContext || parent == null ? InlineTarget.invalid() : InlineTarget.of(parent, var);
+    }
+
+    if (expr instanceof FunctionExprent func) {
+      FunctionType type = func.getFuncType();
+
+      // Only the first operand is always evaluated. Inlining into later operands
+      // would delay the increment or make it conditional.
+      if (type == FunctionType.BOOLEAN_OR || type == FunctionType.BOOLEAN_AND || type == FunctionType.TERNARY) {
+        return findInlineTarget(func.getLstOperands().get(0), match, writeContext, inlineExpr, func);
+      }
+
+      return findInlineTargetInChildren(func.getAllExprents(), match, writeContext || type.isPPMM(), inlineExpr, func);
+    }
+
+    if (expr instanceof AssignmentExprent assignment) {
+      InlineTarget left = findInlineTarget(assignment.getLeft(), match, true, inlineExpr, assignment);
+      if (!left.valid || left.var != null) {
+        return left;
+      }
+
+      InlineTarget right = findInlineTarget(assignment.getRight(), match, writeContext, inlineExpr, assignment);
+      if (!right.valid || right.var == null) {
+        return right;
+      }
+
+      return isEvaluatedBefore(assignment.getLeft(), inlineExpr) ? right : InlineTarget.invalid();
+    }
+
+    return findInlineTargetInChildren(expr.getAllExprents(), match, writeContext, inlineExpr, expr);
+  }
+
+  private static InlineTarget findInlineTargetInChildren(
+    List<Exprent> children,
+    VarExprent match,
+    boolean writeContext,
+    Exprent inlineExpr,
+    Exprent parent
+  ) {
+    boolean unsafeBeforeTarget = false;
+
+    for (Exprent child : children) {
+      InlineTarget target = findInlineTarget(child, match, writeContext, inlineExpr, parent);
+      if (!target.valid || (unsafeBeforeTarget && target.var != null)) {
+        return InlineTarget.invalid();
+      }
+
+      if (target.var != null) {
+        return target;
+      }
+
+      if (!isEvaluatedBefore(child, inlineExpr)) {
+        unsafeBeforeTarget = true;
+      }
+    }
+
+    return InlineTarget.none();
+  }
+
+  private static boolean isEvaluatedBefore(Exprent exprent, Exprent reference) {
+    if (exprent instanceof ConstExprent || exprent instanceof VarExprent) {
+      return true;
+    }
+
+    BitSet exprentRange = new BitSet();
+    exprent.getBytecodeRange(exprentRange);
+
+    BitSet referenceRange = new BitSet();
+    reference.getBytecodeRange(referenceRange);
+
+    int exprentLast = exprentRange.length() - 1;
+    int referenceFirst = referenceRange.nextSetBit(0);
+
+    return exprentLast >= 0 && referenceFirst >= 0 && exprentLast < referenceFirst;
+  }
+
+  private static final class InlineTarget {
+    private static final InlineTarget NONE = new InlineTarget(null, null, true);
+    private static final InlineTarget INVALID = new InlineTarget(null, null, false);
+
+    final Exprent parent;
+    final VarExprent var;
+    final boolean valid;
+
+    private InlineTarget(Exprent parent, VarExprent var, boolean valid) {
+      this.parent = parent;
+      this.var = var;
+      this.valid = valid;
+    }
+
+    static InlineTarget none() {
+      return NONE;
+    }
+
+    static InlineTarget invalid() {
+      return INVALID;
+    }
+
+    static InlineTarget of(Exprent parent, VarExprent var) {
+      return new InlineTarget(parent, var, true);
+    }
   }
 
   private static boolean isMonitorExit(Exprent first) {
