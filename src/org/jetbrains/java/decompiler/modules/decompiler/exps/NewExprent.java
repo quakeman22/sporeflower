@@ -528,12 +528,6 @@ public class NewExprent extends Exprent {
     return buf;
   }
 
-  // TODO move to InvocationExprent
-  public static boolean probablySyntheticParameter(String className) {
-    ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(className);
-    return node != null && node.type == ClassNode.Type.ANONYMOUS;
-  }
-
   private static TextBuffer getQualifiedNewInstance(String classname, List<Exprent> lstParams, int indent) {
     ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(classname);
 

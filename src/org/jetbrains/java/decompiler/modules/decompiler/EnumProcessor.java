@@ -23,15 +23,8 @@ public final class EnumProcessor {
       String name = mt.getName();
       String descriptor = mt.getDescriptor();
 
-      if ("values".equals(name)) {
-        if (descriptor.equals("()[L" + cl.qualifiedName + ";")) {
-          wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(name, descriptor));
-        }
-      }
-      else if ("valueOf".equals(name)) {
-        if (descriptor.equals("(Ljava/lang/String;)L" + cl.qualifiedName + ";")) {
-          wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(name, descriptor));
-        }
+      if (isImplicitEnumHelper(cl, mt)) {
+        wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(name, descriptor));
       }
       else if (CodeConstants.INIT_NAME.equals(name)) {
         Statement firstData = Statements.findFirstData(method.root);
@@ -54,5 +47,16 @@ public final class EnumProcessor {
         wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(fd.getName(), descriptor));
       }
     }
+  }
+
+  public static boolean isImplicitEnumHelper(StructClass cl, StructMethod mt) {
+    if (!cl.hasModifier(CodeConstants.ACC_ENUM)) {
+      return false;
+    }
+
+    String name = mt.getName();
+    String descriptor = mt.getDescriptor();
+    return "values".equals(name) && descriptor.equals("()[L" + cl.qualifiedName + ";") ||
+      "valueOf".equals(name) && descriptor.equals("(Ljava/lang/String;)L" + cl.qualifiedName + ";");
   }
 }

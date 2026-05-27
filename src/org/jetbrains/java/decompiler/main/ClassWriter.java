@@ -490,10 +490,11 @@ public class ClassWriter implements StatementWriter {
       }
 
       // methods
+      Set<String> preservedHiddenMethodKeys = getPreservedHiddenMethodKeysForClass(cl, methodToDecompile);
       VBStyleCollection<StructMethod, String> methods = cl.getMethods();
       for (int i = 0; i < methods.size(); i++) {
         StructMethod mt = methods.get(i);
-        boolean hide = shouldHideMethod(node, wrapper, cl, mt, methodToDecompile);
+        boolean hide = shouldHideMethod(node, wrapper, cl, mt, methodToDecompile, preservedHiddenMethodKeys);
         if (hide) continue;
 
         TextBuffer methodBuffer = new TextBuffer();
@@ -706,10 +707,37 @@ public class ClassWriter implements StatementWriter {
     StructMethod mt,
     String methodToDecompile
   ) {
+    return shouldHideMethodBase(node, wrapper, cl, mt, methodToDecompile);
+  }
+
+  private static boolean shouldHideMethod(
+    ClassNode node,
+    ClassWrapper wrapper,
+    StructClass cl,
+    StructMethod mt,
+    String methodToDecompile,
+    Set<String> preservedHiddenMethodKeys
+  ) {
+    boolean hide = shouldHideMethodBase(node, wrapper, cl, mt, methodToDecompile);
+    if (!hide || EnumProcessor.isImplicitEnumHelper(cl, mt)) {
+      return hide;
+    }
+
+    return !preservedHiddenMethodKeys.contains(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+  }
+
+  private static boolean shouldHideMethodBase(
+    ClassNode node,
+    ClassWrapper wrapper,
+    StructClass cl,
+    StructMethod mt,
+    String methodToDecompile
+  ) {
     if (methodToDecompile.isEmpty() || (node.type != ClassNode.Type.ROOT && node.type != ClassNode.Type.MEMBER)) {
+      String methodKey = InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor());
       return mt.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC) ||
         mt.hasModifier(CodeConstants.ACC_BRIDGE) && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_BRIDGE) ||
-        wrapper.getHiddenMembers().contains(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+        wrapper.getHiddenMembers().contains(methodKey);
     }
 
     return !methodToDecompile.equals(cl.qualifiedName + "." + mt.getName() + mt.getDescriptor()) &&
@@ -828,6 +856,17 @@ public class ClassWriter implements StatementWriter {
       .putIfAbsent(key, invocation);
   }
 
+  private static Set<String> getPreservedHiddenMethodKeysForClass(
+    StructClass targetClass,
+    String methodToDecompile
+  ) {
+    // Do not cache this closure across class writes. writeClass() runs late
+    // processors recursively, and those processors can still mutate
+    // hiddenMembers for nested classes. Recompute so preservation reflects the
+    // current writer state.
+    return collectPreservedHiddenMethodKeys(methodToDecompile).getOrDefault(targetClass.qualifiedName, Collections.emptySet());
+  }
+
   private static Set<String> collectReferencedFieldKeysInVisibleMethods(
     ClassNode node,
     ClassWrapper wrapper,
@@ -841,6 +880,104 @@ public class ClassWriter implements StatementWriter {
       }
     });
     return referencedFieldKeys;
+  }
+
+  private record SourceMethod(ClassNode node, ClassWrapper wrapper, StructClass cl, StructMethod mt, String key, String id) {
+    private SourceMethod(ClassNode node, ClassWrapper wrapper, StructClass cl, StructMethod mt) {
+      this(node, wrapper, cl, mt, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+    }
+
+    private SourceMethod(ClassNode node, ClassWrapper wrapper, StructClass cl, StructMethod mt, String key) {
+      this(node, wrapper, cl, mt, key, cl.qualifiedName + " " + key);
+    }
+  }
+
+  private static Map<String, Set<String>> collectPreservedHiddenMethodKeys(
+    String methodToDecompile
+  ) {
+    ClassesProcessor processor = DecompilerContext.getClassProcessor();
+    if (processor == null) {
+      return Collections.emptyMap();
+    }
+
+    Map<String, ClassNode> nodesByClass = new LinkedHashMap<>();
+    for (ClassNode rootNode : processor.getMapRootClasses().values()) {
+      collectClassNodes(rootNode, nodesByClass);
+    }
+
+    Map<String, Set<String>> preserved = new HashMap<>();
+    Deque<SourceMethod> worklist = new ArrayDeque<>();
+    Set<String> scanned = new HashSet<>();
+
+    for (ClassNode node : nodesByClass.values()) {
+      ClassWrapper wrapper = node.getWrapper();
+      if (wrapper == null) {
+        continue;
+      }
+
+      StructClass cl = wrapper.getClassStruct();
+      for (StructMethod mt : cl.getMethods()) {
+        if (!shouldHideMethodBase(node, wrapper, cl, mt, methodToDecompile)) {
+          worklist.add(new SourceMethod(node, wrapper, cl, mt));
+        }
+      }
+    }
+
+    while (!worklist.isEmpty()) {
+      SourceMethod source = worklist.removeFirst();
+      if (!scanned.add(source.id())) {
+        continue;
+      }
+
+      MethodWrapper methodWrapper = source.wrapper().getMethodWrapper(source.mt().getName(), source.mt().getDescriptor());
+      if (methodWrapper == null || methodWrapper.root == null || methodWrapper.decompileError != null) {
+        continue;
+      }
+
+      visitStatementExprents(methodWrapper.root.getFirst(), exprent -> {
+        SourceMethod target = getOwnMethodTarget(exprent, nodesByClass);
+        if (target == null || EnumProcessor.isImplicitEnumHelper(target.cl(), target.mt())) {
+          return;
+        }
+
+        if (shouldHideMethodBase(target.node(), target.wrapper(), target.cl(), target.mt(), methodToDecompile)) {
+          boolean added = preserved
+            .computeIfAbsent(target.cl().qualifiedName, ignored -> new HashSet<>())
+            .add(target.key());
+          if (added) {
+            worklist.add(target);
+          }
+        }
+      });
+    }
+
+    return preserved;
+  }
+
+  private static void collectClassNodes(ClassNode node, Map<String, ClassNode> nodesByClass) {
+    nodesByClass.put(node.classStruct.qualifiedName, node);
+    for (ClassNode child : node.nested) {
+      collectClassNodes(child, nodesByClass);
+    }
+  }
+
+  private static SourceMethod getOwnMethodTarget(Exprent exprent, Map<String, ClassNode> nodesByClass) {
+    if (!(exprent instanceof InvocationExprent invocation)
+      || invocation.getFunctype() != InvocationExprent.Type.GENERAL
+      || invocation.getInvocationType() == InvocationExprent.InvocationType.DYNAMIC
+      || invocation.getInvocationType() == InvocationExprent.InvocationType.CONSTANT_DYNAMIC) {
+      return null;
+    }
+
+    ClassNode targetNode = nodesByClass.get(invocation.getClassname());
+    if (targetNode == null || targetNode.getWrapper() == null) {
+      return null;
+    }
+
+    ClassWrapper targetWrapper = targetNode.getWrapper();
+    StructClass targetClass = targetWrapper.getClassStruct();
+    StructMethod targetMethod = targetClass.getMethod(invocation.getName(), invocation.getStringDescriptor());
+    return targetMethod == null ? null : new SourceMethod(targetNode, targetWrapper, targetClass, targetMethod);
   }
 
   private static void visitVisibleMethodExprents(

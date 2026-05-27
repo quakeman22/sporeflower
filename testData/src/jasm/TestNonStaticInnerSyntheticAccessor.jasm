@@ -1,0 +1,27 @@
+package pkg;
+
+super public class TestNonStaticInnerSyntheticAccessor
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method make:"()Ljava/lang/Runnable;"
+  stack 3 locals 1
+{
+  new class TestNonStaticInnerSyntheticAccessor$Inner;
+  dup;
+  aload_0;
+  invokespecial Method TestNonStaticInnerSyntheticAccessor$Inner."<init>":"(Lpkg/TestNonStaticInnerSyntheticAccessor;)V";
+  areturn;
+}
+
+final InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+
+} // end Class TestNonStaticInnerSyntheticAccessor

@@ -9,8 +9,12 @@ import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructClass;
+import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructInnerClassesAttribute;
+import org.jetbrains.java.decompiler.struct.gen.CodeType;
+import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.VarType;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -57,6 +61,52 @@ public final class ExprUtil {
     }
 
     return mask;
+  }
+
+  public static boolean isSyntheticConstructorMarkerArgument(String ownerClassName, MethodDescriptor descriptor, int parameterIndex) {
+    if (parameterIndex != descriptor.params.length - 1) {
+      return false;
+    }
+
+    VarType parameterType = descriptor.params[parameterIndex];
+    if (parameterType.type != CodeType.OBJECT ||
+        parameterType.arrayDim != 0 ||
+        parameterType.value == null ||
+        !isSyntheticConstructorMarkerType(parameterType.value)) {
+      return false;
+    }
+
+    StructClass owner = DecompilerContext.getStructContext().getClass(ownerClassName);
+    if (owner == null) {
+      return false;
+    }
+
+    StringBuilder sourceDescriptor = new StringBuilder("(");
+    for (int i = 0; i < descriptor.params.length - 1; i++) {
+      sourceDescriptor.append(descriptor.params[i]);
+    }
+    sourceDescriptor.append(")V");
+
+    StructMethod sourceConstructor = owner.getMethod(CodeConstants.INIT_NAME, sourceDescriptor.toString());
+    return sourceConstructor != null;
+  }
+
+  public static boolean isSyntheticConstructorMarkerType(String className) {
+    if (DecompilerContext.getClassProcessor() == null) {
+      return false;
+    }
+
+    ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(className);
+    if (node == null) {
+      return false;
+    }
+
+    if (node.type == ClassNode.Type.ANONYMOUS) {
+      return true;
+    }
+
+    StructClass cl = node.classStruct;
+    return cl.isSynthetic() && cl.getFields().isEmpty() && cl.getMethods().isEmpty();
   }
 
   private static boolean isStatic(StructClass struct) {

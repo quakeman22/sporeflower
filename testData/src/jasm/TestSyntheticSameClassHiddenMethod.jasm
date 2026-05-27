@@ -1,0 +1,29 @@
+package pkg;
+
+super public class TestSyntheticSameClassHiddenMethod
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method call:"()Ljava/lang/String;"
+  stack 1 locals 0
+{
+  invokestatic Method hidden:"()Ljava/lang/String;";
+  areturn;
+}
+
+static synthetic Method hidden:"()Ljava/lang/String;"
+  stack 1 locals 0
+{
+  ldc String "ok";
+  areturn;
+}
+
+} // end Class TestSyntheticSameClassHiddenMethod

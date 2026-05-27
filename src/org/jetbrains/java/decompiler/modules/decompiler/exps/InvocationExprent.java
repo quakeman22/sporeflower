@@ -1185,7 +1185,8 @@ public class InvocationExprent extends Exprent {
         boolean ambiguous = setAmbiguousParameters.get(i);
         Exprent parameterExpr = remapReflectiveClassNameArgument(i, lstParameters.get(i));
 
-        if (i == parameters.size() - 1 && parameterExpr.getExprType() == VarType.VARTYPE_NULL && NewExprent.probablySyntheticParameter(descriptor.params[i].value)) {
+        if (parameterExpr.getExprType() == VarType.VARTYPE_NULL &&
+            ExprUtil.isSyntheticConstructorMarkerArgument(classname, descriptor, i)) {
           break;  // skip last parameter of synthetic constructor call
         }
 
