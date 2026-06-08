@@ -329,7 +329,7 @@ public class FunctionExprent extends Exprent {
       return false;
     }
 
-    if (upperBound == null || upperBound.type != CodeType.OBJECT || type1.type != CodeType.OBJECT || type2.type != CodeType.OBJECT) {
+    if (upperBound == null || !isReferenceLike(upperBound) || !isReferenceLike(type1) || !isReferenceLike(type2)) {
       return false;
     }
 
@@ -338,6 +338,10 @@ public class FunctionExprent extends Exprent {
     }
 
     return !type1.higherEqualInLatticeThan(type2) && !type2.higherEqualInLatticeThan(type1);
+  }
+
+  private static boolean isReferenceLike(VarType type) {
+    return type.type == CodeType.OBJECT || type.arrayDim > 0;
   }
 
   private static boolean areGenericTypesSame(VarType right, VarType upperBound) {

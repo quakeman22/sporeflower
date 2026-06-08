@@ -29,4 +29,51 @@ LReturn:
   areturn;
 }
 
+public Method "chooseObject":"(Z)Ljava/lang/Object;"
+  stack 2 locals 2
+{
+  iload_1;
+  ifeq LBytes;
+  new class pkg/TestLegacyTernaryReferenceCastLeft;
+  dup;
+  invokespecial Method pkg/TestLegacyTernaryReferenceCastLeft."<init>":"()V";
+  goto LReturnObject;
+LBytes:
+  iconst_1;
+  newarray byte;
+LReturnObject:
+  areturn;
+}
+
+public Method "chooseObjectReversed":"(Z)Ljava/lang/Object;"
+  stack 2 locals 2
+{
+  iload_1;
+  ifeq LClass;
+  iconst_1;
+  newarray byte;
+  goto LReturnObjectReversed;
+LClass:
+  new class pkg/TestLegacyTernaryReferenceCastLeft;
+  dup;
+  invokespecial Method pkg/TestLegacyTernaryReferenceCastLeft."<init>":"()V";
+LReturnObjectReversed:
+  areturn;
+}
+
+public Method "chooseReferenceArray":"(Z)[Ljava/lang/Object;"
+  stack 2 locals 2
+{
+  iload_1;
+  ifeq LIntegerArray;
+  iconst_1;
+  anewarray class java/lang/String;
+  goto LReturnReferenceArray;
+LIntegerArray:
+  iconst_1;
+  anewarray class java/lang/Integer;
+LReturnReferenceArray:
+  areturn;
+}
+
 } // end Class TestLegacyTernaryReferenceCast

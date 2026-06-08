@@ -27,5 +27,17 @@ public class LegacyTernaryReferenceCastRegressionTest extends DecompileRegressio
       content.contains("? (TestLegacyTernaryReferenceCastBase)(new TestLegacyTernaryReferenceCastLeft()) : new TestLegacyTernaryReferenceCastRight()"),
       content
     );
+    assertTrue(
+      content.contains("? (Object)(new TestLegacyTernaryReferenceCastLeft()) : new byte[1]"),
+      content
+    );
+    assertTrue(
+      content.contains("? (Object)(new byte[1]) : new TestLegacyTernaryReferenceCastLeft()"),
+      content
+    );
+    assertTrue(
+      content.contains("? (Object[])(new String[1]) : new Integer[1]"),
+      content
+    );
   }
 }
