@@ -1,0 +1,16 @@
+package pkg;
+
+super public class TestConstructorPreinitLookupSpecial extends pkg/TestConstructorPreinitLookupInput
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  ldc String "special";
+  invokespecial Method pkg/TestConstructorPreinitLookupInput."<init>":"(Ljava/lang/String;)V";
+  return;
+}
+
+} // end Class TestConstructorPreinitLookupSpecial

@@ -1,0 +1,28 @@
+package pkg;
+
+super public class TestConstructorPreinitLookupInput
+  version 47:0
+{
+
+private final Field name:"Ljava/lang/String;";
+
+public Method "<init>":"(Ljava/lang/String;)V"
+  stack 2 locals 2
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  aload_1;
+  putfield Field name:"Ljava/lang/String;";
+  return;
+}
+
+public Method name:"()Ljava/lang/String;"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field name:"Ljava/lang/String;";
+  areturn;
+}
+
+} // end Class TestConstructorPreinitLookupInput

@@ -1,0 +1,40 @@
+package pkg;
+
+super public class TestConstructorPreinitThisFactoryItem
+  version 47:0
+{
+
+private final Field left:"I";
+private final Field right:"I";
+
+public Method "<init>":"(II)V"
+  stack 2 locals 3
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  iload_1;
+  putfield Field left:"I";
+  aload_0;
+  iload_2;
+  putfield Field right:"I";
+  return;
+}
+
+public Method left:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field left:"I";
+  ireturn;
+}
+
+public Method right:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field right:"I";
+  ireturn;
+}
+
+} // end Class TestConstructorPreinitThisFactoryItem

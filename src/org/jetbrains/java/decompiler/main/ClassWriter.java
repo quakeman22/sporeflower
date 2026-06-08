@@ -70,6 +70,11 @@ public class ClassWriter implements StatementWriter {
     private final ConcurrentHashMap<String, Map<String, List<InvocationExprent>>> byMethodFilter = new ConcurrentHashMap<>();
   }
 
+  @FunctionalInterface
+  private interface SourceMethodBodyWriter {
+    void write(TextBuffer buffer, int bodyIndent);
+  }
+
   public ClassWriter() {
     interceptor = DecompilerContext.getPoolInterceptor();
     javadocProvider = (IFabricJavadocProvider) DecompilerContext.getProperty(IFabricJavadocProvider.PROPERTY_NAME);
@@ -508,6 +513,16 @@ public class ClassWriter implements StatementWriter {
         }
       }
 
+      for (ClassWrapper.SourceOnlyMethod helper : wrapper.getSourceOnlyMethods()) {
+        TextBuffer helperBuffer = new TextBuffer();
+        writeSourceOnlyMethod(cl, helper, helperBuffer, indent + 1);
+        if (hasContent.get()) {
+          buffer.appendLineSeparator();
+        }
+        haveContent.run();
+        buffer.append(helperBuffer);
+      }
+
       List<InvocationExprent> missingMethodStubs = getMissingMethodStubsForClass(node, methodToDecompile);
       for (InvocationExprent stub : missingMethodStubs) {
         TextBuffer stubBuffer = new TextBuffer();
@@ -746,29 +761,111 @@ public class ClassWriter implements StatementWriter {
 
   private void writeMissingMethodStub(ClassNode node, InvocationExprent stub, TextBuffer buffer, int indent) {
     StructClass cl = node.getWrapper().getClassStruct();
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(stub.getStringDescriptor());
+    List<String> parameterNames = new ArrayList<>(descriptor.params.length);
+    for (int i = 0; i < descriptor.params.length; i++) {
+      parameterNames.add("var" + i);
+    }
 
-    if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
-      appendComment(buffer, "source-only stub for unresolved bytecode method reference", indent);
+    writeSyntheticSourceMethod(
+      cl,
+      stub.getName(),
+      stub.getStringDescriptor(),
+      CodeConstants.ACC_PUBLIC | CodeConstants.ACC_STATIC,
+      parameterNames,
+      "source-only stub for unresolved bytecode method reference",
+      buffer,
+      indent,
+      (bodyBuffer, bodyIndent) -> bodyBuffer.appendIndent(bodyIndent)
+        .append("throw new Error(\"")
+        .append(ConstExprent.convertStringToJava(cl.qualifiedName + "." + stub.getName() + ":" + stub.getStringDescriptor(), false))
+        .append("\");")
+        .appendLineSeparator());
+  }
+
+  private void writeSourceOnlyMethod(
+    StructClass cl,
+    ClassWrapper.SourceOnlyMethod helper,
+    TextBuffer buffer,
+    int indent
+  ) {
+    MethodWrapper outerWrapper = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+    DecompilerContext.setProperty(DecompilerContext.CURRENT_METHOD_WRAPPER, helper.owner());
+
+    try {
+      List<String> parameterNames = new ArrayList<>(helper.parameters().size());
+      for (ClassWrapper.SourceOnlyParameter parameter : helper.parameters()) {
+        parameterNames.add(parameter.name());
+      }
+
+      String methodKey = InterpreterUtil.makeUniqueKey(
+        helper.owner().methodStruct.getName(),
+        helper.owner().methodStruct.getDescriptor());
+
+      writeSyntheticSourceMethod(
+        cl,
+        helper.name(),
+        helper.descriptorString(),
+        CodeConstants.ACC_PRIVATE | CodeConstants.ACC_STATIC,
+        parameterNames,
+        null,
+        buffer,
+        indent,
+        (bodyBuffer, bodyIndent) -> {
+          for (Statement statement : helper.bodyStatements()) {
+            TextBuffer statementBuffer = ExprProcessor.jmpWrapper(statement, bodyIndent, false);
+            bodyBuffer.append(statementBuffer, cl.qualifiedName, methodKey);
+          }
+
+          if (!helper.bodyExprents().isEmpty()) {
+            bodyBuffer.append(ExprProcessor.listToJava(helper.bodyExprents(), bodyIndent), cl.qualifiedName, methodKey);
+          }
+
+          if (helper.returnValue() != null) {
+            bodyBuffer.appendIndent(bodyIndent).append("return ");
+            bodyBuffer.append(helper.returnValue().toJava(bodyIndent), cl.qualifiedName, methodKey);
+            bodyBuffer.append(';').appendLineSeparator();
+          }
+        });
+    }
+    finally {
+      DecompilerContext.setProperty(DecompilerContext.CURRENT_METHOD_WRAPPER, outerWrapper);
+    }
+  }
+
+  private void writeSyntheticSourceMethod(
+    StructClass cl,
+    String name,
+    String descriptorString,
+    int flags,
+    List<String> parameterNames,
+    String comment,
+    TextBuffer buffer,
+    int indent,
+    SourceMethodBodyWriter bodyWriter
+  ) {
+    if (comment != null && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
+      appendComment(buffer, comment, indent);
     }
 
     buffer.appendIndent(indent);
-    appendModifiers(buffer, CodeConstants.ACC_PUBLIC | CodeConstants.ACC_STATIC, METHOD_ALLOWED, false, METHOD_EXCLUDED);
+    appendModifiers(buffer, flags, METHOD_ALLOWED, false, METHOD_EXCLUDED);
 
-    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(stub.getStringDescriptor());
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(descriptorString);
     buffer.appendCastTypeName(descriptor.ret).append(' ');
 
-    String name = stub.getName();
+    String renderedName = name;
     if (interceptor != null) {
-      String newName = interceptor.getName(cl.qualifiedName + " " + stub.getName() + " " + stub.getStringDescriptor());
+      String newName = interceptor.getName(cl.qualifiedName + " " + name + " " + descriptorString);
       if (newName != null) {
-        name = newName.split(" ")[1];
+        renderedName = newName.split(" ")[1];
       }
     }
 
-    String validName = toValidJavaIdentifier(name);
-    buffer.appendMethod(validName, true, cl.qualifiedName, stub.getName(), descriptor);
-    if (!validName.equals(name)) {
-      buffer.append("/* $VF was: ").append(name).append(" */");
+    String validName = toValidJavaIdentifier(renderedName);
+    buffer.appendMethod(validName, true, cl.qualifiedName, name, descriptor);
+    if (!validName.equals(renderedName)) {
+      buffer.append("/* $VF was: ").append(renderedName).append(" */");
     }
 
     buffer.append('(');
@@ -776,14 +873,11 @@ public class ClassWriter implements StatementWriter {
       if (i > 0) {
         buffer.append(", ");
       }
-      buffer.appendCastTypeName(descriptor.params[i]).append(" var").append(i);
+      String parameterName = i < parameterNames.size() ? parameterNames.get(i) : "var" + i;
+      buffer.appendCastTypeName(descriptor.params[i]).append(' ').append(parameterName);
     }
     buffer.append(") {").appendLineSeparator();
-    buffer.appendIndent(indent + 1)
-      .append("throw new Error(\"")
-      .append(ConstExprent.convertStringToJava(cl.qualifiedName + "." + stub.getName() + ":" + stub.getStringDescriptor(), false))
-      .append("\");")
-      .appendLineSeparator();
+    bodyWriter.write(buffer, indent + 1);
     buffer.appendIndent(indent).append('}').appendLineSeparator();
   }
 
@@ -847,13 +941,28 @@ public class ClassWriter implements StatementWriter {
       || !ownerClass.isOwn()
       || ownerClass.hasModifier(CodeConstants.ACC_INTERFACE)
       || ownerClass.hasModifier(CodeConstants.ACC_ANNOTATION)
-      || ownerClass.getMethodRecursive(name, descriptor) != null) {
+      || ownerClass.getMethodRecursive(name, descriptor) != null
+      || isSourceOnlyMethod(ownerClass, name, descriptor)) {
       return;
     }
 
     String key = InterpreterUtil.makeUniqueKey(name, descriptor);
     stubs.computeIfAbsent(ownerClass.qualifiedName, ignored -> new LinkedHashMap<>())
       .putIfAbsent(key, invocation);
+  }
+
+  private static boolean isSourceOnlyMethod(StructClass ownerClass, String name, String descriptor) {
+    ClassesProcessor processor = DecompilerContext.getClassProcessor();
+    if (processor == null) {
+      return false;
+    }
+
+    ClassNode node = processor.getMapRootClasses().get(ownerClass.qualifiedName);
+    if (node == null || node.getWrapper() == null) {
+      return false;
+    }
+
+    return node.getWrapper().getSourceOnlyMethodKeys().contains(InterpreterUtil.makeUniqueKey(name, descriptor));
   }
 
   private static Set<String> getPreservedHiddenMethodKeysForClass(

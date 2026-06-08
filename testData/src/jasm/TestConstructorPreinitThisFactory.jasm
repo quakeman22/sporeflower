@@ -1,0 +1,127 @@
+package pkg;
+
+super public class TestConstructorPreinitThisFactory extends pkg/TestMissingSubclassConstructorBase
+  version 47:0
+{
+
+private Field name:"Ljava/lang/String;";
+private Field value:"Ljava/lang/Object;";
+
+public Method "<init>":"(Ljava/util/Hashtable;Ljava/lang/String;I)V"
+  stack 6 locals 8
+{
+  aload_1;
+  astore 6;
+  aload_2;
+  astore 4;
+  ldc String "item";
+  aload 4;
+  invokevirtual Method java/lang/String.equals:"(Ljava/lang/Object;)Z";
+  ifeq LBuffer;
+  new class pkg/TestConstructorPreinitThisFactoryItem;
+  dup;
+  aload 6;
+  ldc String "left";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  iconst_0;
+  invokestatic Method parse:"(Ljava/lang/Object;I)I";
+  aload 6;
+  ldc String "right";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  iconst_0;
+  invokestatic Method parse:"(Ljava/lang/Object;I)I";
+  invokespecial Method pkg/TestConstructorPreinitThisFactoryItem."<init>":"(II)V";
+  astore 7;
+  goto LCall;
+LBuffer:
+  ldc String "buffer";
+  aload 4;
+  invokevirtual Method java/lang/String.equals:"(Ljava/lang/Object;)Z";
+  ifeq LInteger;
+  new class java/lang/StringBuffer;
+  dup;
+  aload 6;
+  ldc String "text";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  checkcast class java/lang/String;
+  invokespecial Method java/lang/StringBuffer."<init>":"(Ljava/lang/String;)V";
+  astore 7;
+  goto LCall;
+LInteger:
+  ldc String "number";
+  aload 4;
+  invokevirtual Method java/lang/String.equals:"(Ljava/lang/Object;)Z";
+  ifeq LNull;
+  new class java/lang/Integer;
+  dup;
+  iload_3;
+  invokespecial Method java/lang/Integer."<init>":"(I)V";
+  astore 7;
+  goto LCall;
+LNull:
+  aconst_null;
+  astore 7;
+LCall:
+  aload_0;
+  aload_2;
+  aload 7;
+  invokespecial Method "<init>":"(Ljava/lang/String;Ljava/lang/Object;)V";
+  return;
+}
+
+private Method "<init>":"(Ljava/lang/String;Ljava/lang/Object;)V"
+  stack 4 locals 6
+{
+  aload_2;
+  astore_3;
+  aload_2;
+  instanceof class pkg/TestConstructorPreinitThisFactoryItem;
+  ifeq LLeftZero;
+  aload_3;
+  checkcast class pkg/TestConstructorPreinitThisFactoryItem;
+  invokevirtual Method pkg/TestConstructorPreinitThisFactoryItem.left:"()I";
+  goto LLeftDone;
+LLeftZero:
+  iconst_0;
+LLeftDone:
+  istore 4;
+  aload_2;
+  astore 5;
+  aload_0;
+  iload 4;
+  aload_2;
+  instanceof class pkg/TestConstructorPreinitThisFactoryItem;
+  ifeq LRightZero;
+  aload 5;
+  checkcast class pkg/TestConstructorPreinitThisFactoryItem;
+  invokevirtual Method pkg/TestConstructorPreinitThisFactoryItem.right:"()I";
+  goto LRightDone;
+LRightZero:
+  iconst_0;
+LRightDone:
+  invokespecial Method pkg/TestMissingSubclassConstructorBase."<init>":"(II)V";
+  aload_0;
+  aload_1;
+  putfield Field name:"Ljava/lang/String;";
+  aload_0;
+  aload_2;
+  putfield Field value:"Ljava/lang/Object;";
+  return;
+}
+
+private static Method parse:"(Ljava/lang/Object;I)I"
+  stack 1 locals 2
+{
+  aload_0;
+  instanceof class java/lang/Integer;
+  ifeq LDefault;
+  aload_0;
+  checkcast class java/lang/Integer;
+  invokevirtual Method java/lang/Integer.intValue:"()I";
+  ireturn;
+LDefault:
+  iload_1;
+  ireturn;
+}
+
+} // end Class TestConstructorPreinitThisFactory

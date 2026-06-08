@@ -11,19 +11,25 @@ import org.jetbrains.java.decompiler.main.decompiler.CancelationManager;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribute;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.DotExporter;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
@@ -36,6 +42,9 @@ public class ClassWrapper {
   private final VBStyleCollection<Exprent, String> staticFieldInitializers = new VBStyleCollection<>();
   private final VBStyleCollection<Exprent, String> dynamicFieldInitializers = new VBStyleCollection<>();
   private final VBStyleCollection<MethodWrapper, String> methods = new VBStyleCollection<>();
+  private final List<SourceOnlyMethod> sourceOnlyMethods = new ArrayList<>();
+  private final Set<String> sourceOnlyMethodKeys = new HashSet<>();
+  private int sourceOnlyMethodCounter;
 
   public ClassWrapper(StructClass classStruct) {
     this.classStruct = classStruct;
@@ -231,6 +240,37 @@ public class ClassWrapper {
     return hiddenMembers;
   }
 
+  public List<SourceOnlyMethod> getSourceOnlyMethods() {
+    return sourceOnlyMethods;
+  }
+
+  public Set<String> getSourceOnlyMethodKeys() {
+    return sourceOnlyMethodKeys;
+  }
+
+  public void addSourceOnlyMethod(SourceOnlyMethod method) {
+    sourceOnlyMethods.add(method);
+    sourceOnlyMethodKeys.add(InterpreterUtil.makeUniqueKey(method.name(), method.descriptorString()));
+  }
+
+  public String nextSourceOnlyMethodName(String prefix) {
+    Set<String> usedNames = new HashSet<>();
+    for (StructMethod method : classStruct.getMethods()) {
+      usedNames.add(method.getName());
+    }
+    for (SourceOnlyMethod method : sourceOnlyMethods) {
+      usedNames.add(method.name());
+    }
+
+    String name;
+    do {
+      name = prefix + sourceOnlyMethodCounter++;
+    }
+    while (usedNames.contains(name));
+
+    return name;
+  }
+
   public VBStyleCollection<Exprent, String> getStaticFieldInitializers() {
     return staticFieldInitializers;
   }
@@ -243,4 +283,30 @@ public class ClassWrapper {
   public String toString() {
     return classStruct.qualifiedName;
   }
+
+  public record SourceOnlyMethod(
+    String name,
+    VarType returnType,
+    List<SourceOnlyParameter> parameters,
+    List<Statement> bodyStatements,
+    List<Exprent> bodyExprents,
+    Exprent returnValue,
+    MethodWrapper owner
+  ) {
+    public SourceOnlyMethod {
+      parameters = Collections.unmodifiableList(new ArrayList<>(parameters));
+      bodyStatements = Collections.unmodifiableList(new ArrayList<>(bodyStatements));
+      bodyExprents = Collections.unmodifiableList(new ArrayList<>(bodyExprents));
+    }
+
+    public String descriptorString() {
+      StringBuilder descriptor = new StringBuilder("(");
+      for (SourceOnlyParameter parameter : parameters) {
+        descriptor.append(parameter.type());
+      }
+      return descriptor.append(')').append(returnType).toString();
+    }
+  }
+
+  public record SourceOnlyParameter(VarType type, String name, VarExprent exprent) {}
 }

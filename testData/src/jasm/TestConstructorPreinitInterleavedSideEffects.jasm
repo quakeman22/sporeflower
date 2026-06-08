@@ -1,0 +1,46 @@
+package pkg;
+
+super public class TestConstructorPreinitInterleavedSideEffects extends pkg/TestMissingSubclassConstructorBase
+  version 47:0
+{
+
+private static Field counter:"I";
+
+public Method "<init>":"()V"
+  stack 3 locals 3
+{
+  iconst_0;
+  invokestatic Method tick:"(I)I";
+  istore_1;
+  iconst_1;
+  invokestatic Method tick:"(I)I";
+  istore_2;
+  iload_1;
+  iconst_2;
+  invokestatic Method tick:"(I)I";
+  iadd;
+  istore_1;
+  iload_2;
+  iconst_3;
+  invokestatic Method tick:"(I)I";
+  iadd;
+  istore_2;
+  aload_0;
+  iload_1;
+  iload_2;
+  invokespecial Method pkg/TestMissingSubclassConstructorBase."<init>":"(II)V";
+  return;
+}
+
+private static Method tick:"(I)I"
+  stack 2 locals 1
+{
+  getstatic Field counter:"I";
+  iload_0;
+  iadd;
+  putstatic Field counter:"I";
+  getstatic Field counter:"I";
+  ireturn;
+}
+
+} // end Class TestConstructorPreinitInterleavedSideEffects
