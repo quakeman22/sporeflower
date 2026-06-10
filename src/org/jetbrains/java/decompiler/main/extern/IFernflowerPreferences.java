@@ -333,7 +333,7 @@ public interface IFernflowerPreferences {
 
   @Name("Thread Count")
   @Description("How many threads to use to decompile.")
-  @DynamicDefaultValue("all available processors")
+  @DynamicDefaultValue("up to 4 available processors")
   @ShortName("thr")
   @Type(DecompilerOption.Type.INTEGER)
   String THREADS = "thread-count";
@@ -493,7 +493,7 @@ public interface IFernflowerPreferences {
     defaults.put(ERROR_MESSAGE, "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)");
     defaults.put(UNIT_TEST_MODE, "0");
     defaults.put(DUMP_ORIGINAL_LINES, "0");
-    defaults.put(THREADS, String.valueOf(Runtime.getRuntime().availableProcessors()));
+    defaults.put(THREADS, String.valueOf(defaultThreadCount()));
     defaults.put(SKIP_EXTRA_FILES, "0");
     defaults.put(WARN_INCONSISTENT_INNER_CLASSES, "1");
     defaults.put(DUMP_BYTECODE_ON_ERROR, "1");
@@ -511,6 +511,10 @@ public interface IFernflowerPreferences {
     defaults.put(METHOD_TO_DECOMPILE, "");
 
     return Collections.unmodifiableMap(defaults);
+  }
+
+  static int defaultThreadCount() {
+    return Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
   }
 
   /**
