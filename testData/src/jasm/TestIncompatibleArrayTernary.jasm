@@ -1,0 +1,46 @@
+package pkg;
+
+super public class TestIncompatibleArrayTernary
+  version 45:3
+{
+
+public Field flags:"[I";
+
+public Field refs:"[[Ljava/lang/String;";
+
+public Field ints:"[[[I";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method clear:"(Lpkg/TestIncompatibleArrayTernary;II)V"
+  stack 3 locals 3
+{
+  aload_0;
+  getfield Field flags:"[I";
+  iload_1;
+  iaload;
+  iconst_2;
+  iand;
+  ifeq LInts;
+  aload_0;
+  getfield Field refs:"[[Ljava/lang/String;";
+  goto LJoin;
+LInts:
+  aload_0;
+  getfield Field ints:"[[[I";
+LJoin:
+  iload_1;
+  aaload;
+  iload_2;
+  aconst_null;
+  aastore;
+  return;
+}
+
+} // end Class TestIncompatibleArrayTernary

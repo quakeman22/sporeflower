@@ -671,8 +671,13 @@ public class FunctionExprent extends Exprent {
         }
         return buf.append(".length");
       case TERNARY:
+        Integer condition = constantTernaryCondition();
+        if (condition != null) {
+          return buf.append(wrapTernaryBranch(lstOperands.get(condition == 0 ? 2 : 1), condition == 0 ? 2 : 1, indent));
+        }
+
         buf.pushNewlineGroup(indent, 1);
-        buf.append(wrapOperandString(lstOperands.get(0), true, indent))
+        buf.append(wrapTernaryCondition(lstOperands.get(0), indent))
           .appendPossibleNewline(" ").append("? ")
           .append(wrapTernaryBranch(lstOperands.get(1), 1, indent))
           .appendPossibleNewline(" ").append(": ")
@@ -846,6 +851,29 @@ public class FunctionExprent extends Exprent {
     }
 
     return res;
+  }
+
+  private Integer constantTernaryCondition() {
+    if (funcType != FunctionType.TERNARY || !(lstOperands.get(0) instanceof ConstExprent constExpr)) {
+      return null;
+    }
+
+    if (!constExpr.getConstType().typeFamily.intOrBool() || constExpr.getConstType().type == CodeType.BOOLEAN) {
+      return null;
+    }
+
+    return constExpr.getIntValue() == 0 ? 0 : 1;
+  }
+
+  private TextBuffer wrapTernaryCondition(Exprent expr, int indent) {
+    VarType sourceType = ExprProcessor.getBooleanNumericStackConversionSourceType(expr, expr.getExprType());
+    if (ExprProcessor.requiresBooleanNumericStackConversion(VarType.VARTYPE_BOOLEAN, sourceType, expr)) {
+      TextBuffer res = new TextBuffer();
+      ExprProcessor.appendBooleanNumericStackConversion(expr, VarType.VARTYPE_BOOLEAN, sourceType, res, indent);
+      return res;
+    }
+
+    return wrapOperandString(expr, true, indent);
   }
 
   private TextBuffer wrapTernaryBranch(Exprent expr, int operand, int indent) {

@@ -47,4 +47,33 @@ public class FullrunUncoveredRegressionTest extends DecompileRegressionTestBase 
 
     recompile();
   }
+
+  @Test
+  public void testIntegerReturnDiamondDoesNotUseIntLiteralAsTernaryCondition() throws IOException {
+    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIntConditionTernary.class");
+
+    String content = decompileClassFile(classFile, "pkg/TestIntConditionTernary.java");
+    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertFalse(content.contains("return 1 ? 0 : 1;"), content);
+    assertFalse(content.contains("return 0 ? 0 : 1;"), content);
+    assertFalse(content.contains("return true ? 0 : 1;"), content);
+    assertFalse(content.contains("return false ? 0 : 1;"), content);
+    assertTrue(content.contains("return 0;"), content);
+    assertTrue(content.contains("return 1;"), content);
+
+    recompile();
+  }
+
+  @Test
+  public void testIncompatibleArrayBranchesAreNotRenderedAsSingleTernaryReceiver() throws IOException {
+    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIncompatibleArrayTernary.class");
+
+    String content = decompileClassFile(classFile, "pkg/TestIncompatibleArrayTernary.java");
+    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertFalse(content.contains("? this.refs : this.ints"), content);
+    assertFalse(content.contains("? var0.refs : var0.ints"), content);
+    assertTrue(content.contains("? (Object[][])var0.refs : var0.ints"), content);
+
+    recompile();
+  }
 }

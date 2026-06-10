@@ -15,6 +15,7 @@ public class ArrayExprent extends Exprent {
   private Exprent array;
   private Exprent index;
   private final VarType hardType;
+  private VarType arrayRenderUpperBound;
 
   public ArrayExprent(Exprent array, Exprent index, VarType hardType, BitSet bytecodeOffsets) {
     super(Type.ARRAY);
@@ -49,7 +50,10 @@ public class ArrayExprent extends Exprent {
 
   @Override
   public VarType getInferredExprType(VarType upperBound) {
-    VarType exprType = array.getInferredExprType(upperBound);
+    VarType arrayUpperBound = toArrayUpperBound(upperBound);
+    rememberArrayRenderUpperBound(arrayUpperBound);
+
+    VarType exprType = array.getInferredExprType(arrayUpperBound);
     if (exprType.equals(VarType.VARTYPE_NULL)) {
       return fallbackElementType();
     }
@@ -86,6 +90,11 @@ public class ArrayExprent extends Exprent {
 
   @Override
   public TextBuffer toJava(int indent) {
+    // Array bytecode can merge distinct reference-array branches before an aaload.
+    // Give the receiver its source-level array bound so legacy ternaries cast a branch when needed.
+    VarType renderUpperBound = arrayRenderUpperBound == null ? fallbackArrayType() : arrayRenderUpperBound;
+    array.getInferredExprType(renderUpperBound);
+
     TextBuffer res = array.toJava(indent);
 
     if (array.getPrecedence() > getPrecedence() && !canSkipParenEnclose(array)) { // array precedence equals 0
@@ -157,6 +166,20 @@ public class ArrayExprent extends Exprent {
       return VarType.VARTYPE_BYTE.resizeArrayDim(1);
     }
     return elementType.resizeArrayDim(1);
+  }
+
+  private static VarType toArrayUpperBound(VarType elementUpperBound) {
+    return elementUpperBound == null ? null : elementUpperBound.resizeArrayDim(elementUpperBound.arrayDim + 1);
+  }
+
+  private void rememberArrayRenderUpperBound(VarType candidate) {
+    if (candidate == null) {
+      return;
+    }
+
+    if (arrayRenderUpperBound == null || arrayRenderUpperBound.higherEqualInLatticeThan(candidate)) {
+      arrayRenderUpperBound = candidate;
+    }
   }
 
   private boolean shouldCastToFallbackArrayType(VarType arrType) {

@@ -1,0 +1,49 @@
+package pkg;
+
+super public class TestIntConditionTernary
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Field state:"I";
+
+public static Method test:"(II)I"
+  stack 2 locals 2
+{
+  iconst_1;
+  pop;
+  iconst_0;
+  iload_0;
+  lookupswitch{ //2
+    0: LZero;
+    701: LCase;
+    default: LDefault };
+LZero:
+  iconst_0;
+  putstatic Field state:"I";
+  goto LDefault;
+LCase:
+  iload_1;
+  sipush 702;
+  if_icmpeq LDefault;
+  iconst_0;
+  goto LJoin;
+LDefault:
+  iconst_1;
+LJoin:
+  if_icmpne LReturnOne;
+  iconst_0;
+  ireturn;
+LReturnOne:
+  iconst_1;
+  ireturn;
+}
+
+} // end Class TestIntConditionTernary
