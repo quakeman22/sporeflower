@@ -1,0 +1,31 @@
+name: Build Sporeflower
+
+on:
+  workflow_dispatch:  # Permite rodar manualmente pelo site do GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Dar permissão ao gradlew
+        run: chmod +x ./gradlew
+
+      - name: Compilar com Gradle
+        run: ./gradlew build -x test
+
+      - name: Upload do JAR gerado
+        uses: actions/upload-artifact@v4
+        with:
+          name: sporeflower-jar
+          path: build/libs/*.jar
+          retention-days: 7
