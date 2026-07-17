@@ -239,31 +239,110 @@ public final class ExitHelper {
     return true;
   }
 
-  // Removes return statements from the ends of methods when they aren't returning a value
+  // Removes return statements from the ends of methods when they aren't returning a value.
   public static boolean removeRedundantReturns(RootStatement root) {
     boolean res = false;
     DummyExitStatement dummyExit = root.getDummyExit();
 
     for (StatEdge edge : dummyExit.getAllPredecessorEdges()) {
-      if (!edge.explicit) {
-        Statement source = edge.getSource();
-        List<Exprent> lstExpr = source.getExprents();
-        if (lstExpr != null && !lstExpr.isEmpty()) {
-          Exprent expr = lstExpr.get(lstExpr.size() - 1);
-          if (expr instanceof ExitExprent) {
-            ExitExprent ex = (ExitExprent) expr;
-            if (ex.getExitType() == ExitExprent.Type.RETURN && ex.getValue() == null) {
-              // remove redundant return
-              dummyExit.addBytecodeOffsets(ex.bytecode);
-              lstExpr.remove(lstExpr.size() - 1);
-              res = true;
-            }
-          }
+      if (edge.explicit) {
+        continue;
+      }
+
+      Statement source = edge.getSource();
+      List<Exprent> lstExpr = source.getExprents();
+      if (lstExpr != null && !lstExpr.isEmpty()) {
+        ExitExprent exit = asVoidReturn(lstExpr.get(lstExpr.size() - 1));
+        if (exit != null) {
+          dummyExit.addBytecodeOffsets(exit.bytecode);
+          lstExpr.remove(lstExpr.size() - 1);
+          res = true;
         }
       }
     }
 
     return res;
+  }
+
+  // Static initializers cannot render even a terminal `return;`. Keep the ordinary-method cleanup
+  // path isolated, then remove explicit void returns only when they are at the rendered root tail.
+  public static boolean removeRedundantInitializerReturns(RootStatement root) {
+    boolean res = removeRedundantReturns(root);
+    DummyExitStatement dummyExit = root.getDummyExit();
+
+    for (StatEdge edge : dummyExit.getAllPredecessorEdges()) {
+      if (!edge.explicit) {
+        continue;
+      }
+
+      Statement source = edge.getSource();
+      List<Exprent> lstExpr = source.getExprents();
+      if (lstExpr != null && !lstExpr.isEmpty() && isLexicallyAtRootTail(source, root)) {
+        ExitExprent exit = asVoidReturn(lstExpr.get(lstExpr.size() - 1));
+        if (exit != null) {
+          dummyExit.addBytecodeOffsets(exit.bytecode);
+          lstExpr.remove(lstExpr.size() - 1);
+          res = true;
+        }
+      }
+    }
+
+    return res;
+  }
+
+  private static boolean isLexicallyAtRootTail(Statement source, RootStatement root) {
+    Statement current = source;
+
+    for (Statement parent = source.getParent(); parent != null && parent != root; parent = parent.getParent()) {
+      if (!(parent instanceof SequenceStatement)) {
+        return false;
+      }
+
+      int currentIndex = parent.getStats().getIndexByKey(current.id);
+      if (currentIndex < 0) {
+        return false;
+      }
+
+      for (int i = currentIndex + 1; i < parent.getStats().size(); i++) {
+        if (!isEmptyRootTail(parent.getStats().get(i), root)) {
+          return false;
+        }
+      }
+
+      current = parent;
+    }
+
+    return current == root.getFirst();
+  }
+
+  private static boolean isEmptyRootTail(Statement stat, RootStatement root) {
+    List<Exprent> exprents = stat.getExprents();
+    if (exprents == null) {
+      return false;
+    }
+
+    // Finally reconstruction can leave an empty landing block after the labeled
+    // sequence. It prints no source and only preserves the existing exit edge.
+    List<StatEdge> successors = stat.getSuccessorEdges(Statement.STATEDGE_DIRECT_ALL);
+    if (!successors.isEmpty() && successors.stream().anyMatch(edge -> edge.getDestination() != root.getDummyExit())) {
+      return false;
+    }
+
+    return exprents.isEmpty() || exprents.size() == 1 && isVoidReturn(exprents.get(0));
+  }
+
+  private static boolean isVoidReturn(Exprent exprent) {
+    return asVoidReturn(exprent) != null;
+  }
+
+  private static ExitExprent asVoidReturn(Exprent exprent) {
+    if (exprent instanceof ExitExprent exit &&
+        exit.getExitType() == ExitExprent.Type.RETURN &&
+        exit.getValue() == null) {
+      return exit;
+    }
+
+    return null;
   }
 
   // Fixes chars being returned when ints are required

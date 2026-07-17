@@ -14,9 +14,10 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.plugins.PluginContext;
 import org.jetbrains.java.decompiler.modules.code.DeadCodeHelper;
+import org.jetbrains.java.decompiler.modules.code.ExceptionDeobfuscator;
 import org.jetbrains.java.decompiler.modules.decompiler.*;
 import org.jetbrains.java.decompiler.modules.decompiler.decompose.DomHelper;
-import org.jetbrains.java.decompiler.modules.code.ExceptionDeobfuscator;
+import org.jetbrains.java.decompiler.modules.decompiler.decompose.GraphStructuringException;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
@@ -45,6 +46,8 @@ public class MethodProcessor implements Runnable {
   private volatile Throwable error;
   private volatile boolean finished = false;
 
+  private record PreparedGraphs(ControlFlowGraph faithful, ControlFlowGraph sparseRangeFallback) { }
+
   public MethodProcessor(StructClass klass,
                          StructMethod method,
                          MethodDescriptor methodDescriptor,
@@ -57,16 +60,6 @@ public class MethodProcessor implements Runnable {
     this.varProc = varProc;
     this.spec = spec;
     this.parentContext = parentContext;
-  }
-
-  private static final class PreparedGraph {
-    private final ControlFlowGraph graph;
-    private final boolean normalizedSparseExceptionRanges;
-
-    private PreparedGraph(ControlFlowGraph graph, boolean normalizedSparseExceptionRanges) {
-      this.graph = graph;
-      this.normalizedSparseExceptionRanges = normalizedSparseExceptionRanges;
-    }
   }
 
   @Override
@@ -106,8 +99,8 @@ public class MethodProcessor implements Runnable {
 
     mt.expandData(cl);
     FullInstructionSequence seq = mt.getInstructionSequence();
-    PreparedGraph prepared = prepareInitialGraph(cl, mt, seq, false, "");
-    ControlFlowGraph graph = prepared.graph;
+    PreparedGraphs prepared = prepareInitialGraphs(cl, mt, seq);
+    ControlFlowGraph graph = prepared.faithful;
 
     if (spec != null) {
       DecompileRecord decompileRecord = new DecompileRecord(mt);
@@ -125,23 +118,30 @@ public class MethodProcessor implements Runnable {
     try {
       root = DomHelper.parseGraph(graph, mt, 0);
     }
-    catch (RuntimeException ex) {
-      // Preserve the faithful CFG by default. If it cannot be structured, retry
-      // with non-throwing connector blocks folded into sparse exception ranges.
-      PreparedGraph retry = prepareInitialGraph(cl, mt, seq, true, "cfgSparseExceptionRetry_");
-      if (!retry.normalizedSparseExceptionRanges) {
+    catch (GraphStructuringException ex) {
+      graph = prepared.sparseRangeFallback;
+      if (graph == null) {
         throw ex;
       }
 
-      graph = retry.graph;
-      DotExporter.toDotFile(graph, mt, "cfgSparseExceptionRetry_Parsed", true);
+      // The fallback starts at the exact point where its logical exception ranges diverge. Finish the common tail of
+      // CFG preparation once, instead of rebuilding and reprocessing the whole method as the old retry path did.
+      prepareGraphForStructuring(graph, mt, "cfgSparseExceptionRanges_");
+      debugCurrentCFG.set(graph);
+      DotExporter.toDotFile(graph, mt, "cfgSparseExceptionRanges_Parsed", true);
 
       try {
         root = DomHelper.parseGraph(graph, mt, 0);
       }
-      catch (RuntimeException retryEx) {
+      catch (GraphStructuringException retryEx) {
         ex.addSuppressed(retryEx);
         throw ex;
+      }
+      catch (RuntimeException retryFailure) {
+        // Do not reinterpret an invariant or implementation failure as another decomposition miss. Preserve the exact
+        // graph's structural failure as context, but surface the unexpected failure from the graph that was selected.
+        retryFailure.addSuppressed(ex);
+        throw retryFailure;
       }
     }
 
@@ -345,7 +345,9 @@ public class MethodProcessor implements Runnable {
     }
 
     // Remove returns that don't need to exist
-    if (ExitHelper.removeRedundantReturns(root)) {
+    if (isInitializer
+        ? ExitHelper.removeRedundantInitializerReturns(root)
+        : ExitHelper.removeRedundantReturns(root)) {
       decompileRecord.add("RedundantReturns", root);
     }
 
@@ -420,14 +422,12 @@ public class MethodProcessor implements Runnable {
     return root;
   }
 
-  private static PreparedGraph prepareInitialGraph(StructClass cl,
-                                                   StructMethod mt,
-                                                   FullInstructionSequence seq,
-                                                   boolean normalizeSparseExceptionRanges,
-                                                   String dotPrefix) {
+  private static PreparedGraphs prepareInitialGraphs(StructClass cl,
+                                                     StructMethod mt,
+                                                     FullInstructionSequence seq) {
     ControlFlowGraph graph = new ControlFlowGraph(seq);
     debugCurrentCFG.set(graph);
-    DotExporter.toDotFile(graph, mt, dotPrefix + "cfgConstructed", true);
+    DotExporter.toDotFile(graph, mt, "cfgConstructed", true);
 
     DeadCodeHelper.removeDeadBlocks(graph);
 
@@ -461,8 +461,17 @@ public class MethodProcessor implements Runnable {
     //		ExceptionDeobfuscator.restorePopRanges(graph);
     ExceptionDeobfuscator.insertEmptyExceptionHandlerBlocks(graph);
 
-    boolean normalizedSparseRanges = normalizeSparseExceptionRanges && ExceptionDeobfuscator.normalizeSparseExceptionRanges(graph);
+    ControlFlowGraph sparseRangeFallback = null;
+    if (ExceptionDeobfuscator.hasMergeableSplitExceptionRanges(graph)) {
+      sparseRangeFallback = graph.copy();
+      ExceptionDeobfuscator.mergeSplitExceptionRanges(sparseRangeFallback);
+    }
 
+    prepareGraphForStructuring(graph, mt, "");
+    return new PreparedGraphs(graph, sparseRangeFallback);
+  }
+
+  private static void prepareGraphForStructuring(ControlFlowGraph graph, StructMethod mt, String dotPrefix) {
     DeadCodeHelper.mergeBasicBlocks(graph);
 
     DecompilerContext.getCounterContainer().setCounter(CounterContainer.VAR_COUNTER, mt.getLocalVariables());
@@ -479,9 +488,14 @@ public class MethodProcessor implements Runnable {
       DotExporter.toDotFile(graph, mt, dotPrefix + "cfgMultipleExceptionEntry", true);
       ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks(graph, mt.getBytecodeVersion());
       DotExporter.toDotFile(graph, mt, dotPrefix + "cfgMultipleExceptionDummyHandlers", true);
-    }
 
-    return new PreparedGraph(graph, normalizedSparseRanges);
+      if (ExceptionDeobfuscator.removeNonThrowingHandlerCloneRanges(graph)) {
+        DeadCodeHelper.removeDeadBlocks(graph);
+        DeadCodeHelper.removeEmptyBlocks(graph);
+        DeadCodeHelper.mergeBasicBlocks(graph);
+        DotExporter.toDotFile(graph, mt, dotPrefix + "cfgNonThrowingHandlerCloneRanges", true);
+      }
+    }
   }
 
   public RootStatement getResult() throws Throwable {
